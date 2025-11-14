@@ -5,14 +5,13 @@ import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from fast_alpr import ALPR
-from supabaseStorage import SupabaseStorageService  # teu módulo
+from supabaseStorage import SupabaseStorageService
 from dotenv import load_dotenv
 import asyncpg
 
 load_dotenv()
 
 app = FastAPI()
-
 
 def _normalize_confidence(value: Any) -> float | None:
     """Convert confidence values (scalar or iterable) into a float average."""
@@ -64,7 +63,7 @@ def serialize_alpr_result(result: Any) -> dict[str, Any]:
 
 # ---------------- SUPABASE ----------------
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://xxxx.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "YOUR_SUPABASE_KEY")  # ideal: service_role
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "YOUR_SUPABASE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "parking-images")
 SUPABASE_PUBLIC_BUCKET = os.getenv("SUPABASE_PUBLIC_BUCKET", "false").lower() == "true"
 
@@ -132,7 +131,7 @@ async def recognize_license_plate(
             image_bytes=image_bytes,
             plate=plate_for_filename
         )
-        file_path = f"{plate_for_filename}"  # caminho é guardado no storage service
+        file_path = f"{plate_for_filename}"
     except Exception as e:
         image_url_or_signed = None
         file_path = None
