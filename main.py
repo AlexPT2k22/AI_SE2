@@ -89,6 +89,10 @@ alpr = ALPR(
     ocr_providers=["CPUExecutionProvider"],
 )
 
+@app.get("/")
+async def root():
+    return {"message": "FastAPI ALPR Service is running."}
+
 
 @app.post("/licenseplate/upload")
 async def recognize_license_plate(
