@@ -2,7 +2,7 @@ fastapi[standard]
 uvicorn[standard]
 python-multipart
 python-dotenv
-fast-alpr
+fast-alpr[onnx]
 opencv-python
 numpy
 supabase
