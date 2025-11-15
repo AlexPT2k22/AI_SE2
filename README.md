@@ -50,11 +50,25 @@ SUPABASE_KEY=chave-service-role-ou-anon
 SUPABASE_BUCKET=parking-images
 SUPABASE_PUBLIC_BUCKET=false   # use true se o bucket for publico
 DATABASE_URL=postgresql://user:senha@host:5432/db
+PARKING_RATE_PER_HOUR=5.0      # tarifa padrao para calculo automatico
+AUTO_CREATE_SESSION_FROM_OCR=true  # cria sessao automaticamente quando o OCR encontra placa
+AUTO_CHARGE_ON_EXIT=true       # debita automaticamente ao fechar a sessao
+AUTO_CHARGE_METHOD=auto_charge # texto armazenado em parking_payments.method nos debitos automaticos
+PARKING_BILLING_MINUTE_STEP=1  # arredonda o tempo para multiplos de X minutos
+PARKING_MINIMUM_FEE=0          # valor minimo a cobrar mesmo em estadias curtas
 ```
 
-Campos extras opcionais:
-- `SUPABASE_PUBLIC_BUCKET=true` quando quiser URLs diretas sem assinatura.
-- Ajuste `SUPABASE_BUCKET` caso use outro bucket.
+- Campos extras opcionais:
+  - `SUPABASE_PUBLIC_BUCKET=true` quando quiser URLs diretas sem assinatura.
+  - Ajuste `SUPABASE_BUCKET` caso use outro bucket.
+  - `PARKING_RATE_PER_HOUR` define a tarifa em moeda local/hora utilizada nas contas automaticas perante saida.
+  - `AUTO_CREATE_SESSION_FROM_OCR` quando `true` faz com que o endpoint `/licenseplate/upload` abra automaticamente uma sessao (caso nao exista outra aberta) sempre que uma placa valida for detectada.
+  - `AUTO_CHARGE_ON_EXIT` habilita o debito automatico (criando um registro em `parking_payments` e atualizando `amount_paid`) assim que a saida e registrada.
+  - `AUTO_CHARGE_METHOD` define o texto salvo no campo `method` quando o debito automatico acontece (padrao `auto_charge`).
+  - `PARKING_BILLING_MINUTE_STEP` controla o arredondamento para cima no calculo de tempo (ex.: 15 = sempre cobrar blocos de 15 minutos).
+  - `PARKING_MINIMUM_FEE` define uma tarifa minima para estacionamentos ultracurtos (ex.: 2.50 garante que ninguem pague menos que isso).
+  - As tabelas `parking_sessions`, `parking_payments` **e `parking_event_log`** sao criadas automaticamente na inicializacao; verifique se o usuario tem permissao `CREATE TABLE`.
+- `plate_country` eh um campo opcional enviado nos endpoints para diferenciar matriculas iguais de paises diferentes. Caso nao venha, o valor fica `null`.
 
 ## Executando a API
 ```bash
@@ -62,14 +76,21 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Rotas
-- `POST /licenseplate/upload`
-  - **Query params**: `camera_id` (opcional, default `default_cam`) para identificar o ponto de captura.
-  - **Body**: `multipart/form-data` com o campo `file` contendo a imagem (`Content-Type: image/jpeg|png`).
-  - **Workflow**: valida o arquivo, roda `ALPR.predict`, faz upload da imagem para o Supabase e grava o evento em `parking_event_log`.
-  - **Resposta 200**: JSON com `plate`, confiancas de deteccao/OCR, URL da imagem (`image_url` ou link assinado) e `alpr_raw` contendo o retorno completo do modelo.
-  - **Erros comuns**:
-    - `400`: arquivo vazio, nao imagem ou falha no decode do OpenCV.
-    - `500`: problemas com Supabase, Postgres ou execucao do modelo.
+- `POST /licenseplate/upload`: upload e reconhecimento de placa a partir de uma imagem. Quando `AUTO_CREATE_SESSION_FROM_OCR=true` ele tambem chama automaticamente o fluxo de entrada (`/vehicles/entry`) para a placa detectada, retornando o objeto `session` na resposta. Parametros, workflow e erros seguem conforme descrito acima.
+- `POST /vehicles/entry`: abre uma sessao de estacionamento (plate/camera/ticket). O `ticket_id` eh opcional; quando ausente a API gera um UUID garantido como unico. Retorna o `session_id` que identifica a sessao no banco.
+- `POST /vehicles/{session_id}/exit`: finaliza a sessao calculando automaticamente o valor devido com base no tempo transcorrido. Atualiza o status para `pending_payment` ou `closed` quando nao ha saldo pendente.
+- `POST /vehicles/{session_id}/payments`: registra um pagamento manual com o metodo/valor desejado e ajusta o status (`closed` quando o valor pago cobre o devido). Permite anexar `metadata` como JSON.
+- `GET /vehicles/{session_id}`: devolve todos os detalhes da sessao incluindo historico de pagamentos.
+- `GET /vehicles/open`: lista ate 100 sessoes com status `open` ou `pending_payment` para exibicao em dashboards.
+- `POST /vehicles/exit-from-plate`: endpoint para automacao da cancela de saida. Recebe apenas `plate` (e opcionalmente `plate_country`) e fecha a sessao aberta correspondente sem precisar saber o `session_id`. Ideal para fluxo hands-free; quando `AUTO_CHARGE_ON_EXIT=true` gera o debito automaticamente usando o metodo configurado.
+
+### Fluxo automatico 100% baseado em OCR
+1. **Entrada:** o sensor cam chama `POST /licenseplate/upload` para reconhecer a placa. No retorno, utilize o `plate` detectado para chamar `POST /vehicles/entry` (enviando tambem `plate_country` se tiver) e guardar o `session_id` retornado se quiser correlacionar posteriormente.
+2. **Associacao segura:** quando duas placas iguais existem em paises diferentes, informe `plate_country` (ex.: `PT`, `ES`, `BR-SP`). Esse campo fica persistido na tabela `parking_sessions`, evitando misturar veiculos distintos.
+3. **Saida:** o sensor da cancela chama `POST /vehicles/exit-from-plate` com `plate` e `plate_country`. A API localiza automaticamente a sessao aberta mais antiga e a encerra, calculando o valor devido. Se `AUTO_CHARGE_ON_EXIT=true`, um registro de pagamento e criado automaticamente e `amount_paid` passa a refletir o debito efetivado.
+4. **Pagamento manual (opcional):** caso prefira cobrar em caixa ou app, desative `AUTO_CHARGE_ON_EXIT` e use `POST /vehicles/{session_id}/payments` com o `session_id` retornado no passo 1 (ou consultado com `GET /vehicles/{session_id}`).
+
+> Observacao: `session_id` eh apenas a chave primaria da sessao no Postgres. Ele e gerado automaticamente na entrada e disseminado nas respostas para integracoes que precisam manipular pagamentos ou relatórios. Para o fluxo basico da cancela nao eh necessario armazena-lo, pois o endpoint `/vehicles/exit-from-plate` ja faz o match por placa.
 
 ## Teste do endpoint
 ```bash
