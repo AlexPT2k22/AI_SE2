@@ -104,7 +104,7 @@ Resposta esperada:
 - `alpr.py`: script simples para testar o modelo localmente, util para validar se os modelos foram baixados corretamente.
 - `parking/train_yolov11.py`: utilitario para treinar um detector YOLOv11 usando o dataset Roboflow incluso em `parking/parking lot.v1i.yolov11/`.
 
-## Treinando o detector YOLOv11 para vagas
+## Treinando o detector YOLOv11 para vagas (NAO APLICAVEL)
 1. Configure o ambiente: `pip install -r requirements.txt` e instale PyTorch (GPU se disponivel).
 2. O dataset Roboflow ja esta no repo em `parking/parking lot.v1i.yolov11/` com splits train/val/test descritos em `data.yaml`.
 3. Rode o script:
@@ -123,7 +123,7 @@ Resposta esperada:
    - `--project`/`--name`: personaliza onde salvar os artefatos.
 5. Ao terminar, utilize `best.pt` como ponto de partida para inferencias ou exporte via `yolo export`/`ultralytics` conforme necessidade.
 
-### Inferencia em video com o `best.pt`
+### Inferencia em video com o `best.pt` (NAO APLICAVEL)
 1. Certifique-se de que o `best.pt` existe (ex.: `runs/parking-yolo11/exp2/weights/best.pt`).
 2. Rode:
    ```bash
@@ -140,7 +140,7 @@ Resposta esperada:
    - Use `--show` para abrir uma janela com preview, `--window-width` para controlar o tamanho exibido e `--vid-stride 2` (ou mais) para pular frames em videos longos. Pressione `q` para fechar a janela.
 3. O script escolhe automaticamente GPU se estiver disponivel; force CPU com `--device cpu`.
 
-## Marcando vagas manualmente com OpenCV
+## Marcando vagas manualmente com OpenCV (NAO APLICAVEL)
 Quando precisar definir manualmente as vagas usando 4 pontos, utilize `mark_parking_spots.py`.
 ```bash
 python mark_parking_spots.py ^
@@ -171,7 +171,7 @@ python visualize_spots_on_video.py ^
 - Use `--codec` para escolher o FourCC do video resultante. Por padrao o script tenta reutilizar o codec do video original; defina explicitamente (`avc1`, `mp4v`, `XVID`, etc.) se notar perda de qualidade ou incompatibilidade.
 - Pressione `q` para encerrar o preview.
 
-## Monitorando vagas com YOLO (ocupado x livre)
+## Monitorando vagas com YOLO (ocupado x livre) (NAO APLICAVEL)
 Use `monitor_parking_yolo.py` para rodar o `best.pt` (ou outro peso YOLO) em um video enquanto cruza as deteccoes com as vagas do `parking_spots.json`.
 ```bash
 python monitor_parking_yolo.py ^
@@ -198,10 +198,11 @@ python monitor_parking_yolo.py ^
 - Use GPUs apenas se tiver instalado os providers correspondentes; por padrao o `fast_alpr` esta configurado para CPU.
 
 ## Comandos
+#### Para RTX 3070 e 16gb RAM
 ```
 python mark_parking_spots.py --source frame.png --output parking_spots.json --label-prefix vaga --start-index 1
 
 python visualize_spots_on_video.py --video video.mp4 --spots parking_spots.json --output video_spots.mp4 --codec mp4v
 
-python monitor_parking_yolo.py --video video.mp4 --spots parking_spots.json --weights yolo11l.pt --classes 2 3 5 7 --overlap-threshold 0.2 --window-width 1920 --codec mp4v
+python monitor_parking_yolo.py --video video.mp4 --spots parking_spots.json --weights yolo11l.pt --classes 2 5 7 --conf 0.20 --iou 0.50 --overlap-threshold 0.20 --window-width 1920
 ```

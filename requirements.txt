@@ -4,6 +4,8 @@ python-multipart
 python-dotenv
 fast-alpr
 opencv-python
+cvzone
 numpy
+ultralytics
 supabase
 asyncpg
