@@ -115,6 +115,9 @@ Cada reserva dura 24h (configurável); são guardadas em `parking_manual_reserva
 | GET | `/parking` | JSON com o estado atual de todas as vagas (`{ "P01": {"occupied": true, "prob": 0.91, ...}, ... }`). |
 | GET | `/video_feed` | Stream MJPEG com o último frame anotado. |
 | GET | `/plate_events` | Lista das últimas matrículas detectadas (`spot`, `plate`, `ocr_conf`, `reserved`, `violation`, timestamp). |
+| POST | `/api/entry` | Regista a entrada de um veículo. Body: `{ "plate": "AA-00-BB", "camera_id": "gate-entrada" }`. Cria/abre um `parking_sessions` com `status=open` e `entry_time=now()`. |
+| POST | `/api/exit` | Fecha a sessão de estacionamento: `{ "plate": "AA-00-BB", "camera_id": "gate-saida" }`. Calcula `amount_due` (diferença entre `entry_time` e `now()` multiplicada pela tarifa configurada) e devolve `{ "session_id": ..., "amount_due": 4.50 }`. |
+| POST | `/api/payments` | Confirma o pagamento de uma sessão: `{ "session_id": 123, "amount": 4.50, "method": "card" }`. Atualiza `parking_payments` e marca o `parking_sessions.status = 'paid'` ou `amount_paid += amount`. |
 | WS | `/ws` | WebSocket que envia o mesmo objeto do `/parking` a cada atualização; usado pelas páginas live/reservas/admin. |
 | GET | `/api/reservations` | Lista reservas ativas (`spot`, `plate`, `expires_at`). Sempre sincronizada com o banco. |
 | POST | `/api/reservations` | Cria uma reserva para o usuário logado (body: `{ "spot": "P01" }`). Valida se a vaga existe, está livre e não há reserva ativa. |
