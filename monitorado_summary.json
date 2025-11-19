@@ -1,0 +1,18 @@
+{
+  "video": "video.mp4",
+  "frames_processed": 112,
+  "spots": [
+    {
+      "name": "vaga01",
+      "total_frames": 112,
+      "occupied_frames": 112,
+      "occupancy_ratio": 1.0
+    },
+    {
+      "name": "vaga02",
+      "total_frames": 112,
+      "occupied_frames": 0,
+      "occupancy_ratio": 0.0
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Estacionamento</title>
+    <style>
+        body { font-family: sans-serif; display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+        #summary { background: #f4f4f4; padding: 20px; border-radius: 8px; }
+        #spots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+        .spot { border: 2px solid #ccc; padding: 10px; border-radius: 5px; text-align: center; }
+        .spot.occupied { background: #ffcdd2; border-color: #f44336; }
+        .spot.free { background: #c8e6c9; border-color: #4caf50; }
+        .spot-name { font-weight: bold; }
+        .spot-prob { font-size: 0.8em; color: #555; }
+    </style>
+</head>
+<body>
+    <div id="summary">
+        <h2>Resumo</h2>
+        <p>Status: <b id="ws-status">Conectando...</b></p>
+        <h3>Total Vagas: <span id="total">-</span></h3>
+        <h3>Ocupadas: <span id="occupied">-</span></h3>
+        <h3>Livres: <span id="free">-</span></h3>
+    </div>
+    <div id="spots-grid">
+        </div>
+
+    <script>
+        const wsStatus = document.getElementById('ws-status');
+        const totalEl = document.getElementById('total');
+        const occupiedEl = document.getElementById('occupied');
+        const freeEl = document.getElementById('free');
+        const grid = document.getElementById('spots-grid');
+
+        // Mude o URL se o seu servidor não estiver em localhost:8000
+        const ws = new WebSocket("ws://localhost:8000/ws/parking/status");
+
+        ws.onopen = () => {
+            console.log("Conectado ao servidor de parking.");
+            wsStatus.textContent = "Conectado";
+            wsStatus.style.color = "green";
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log("Recebido novo estado:", data);
+
+            // Atualizar resumo
+            totalEl.textContent = data.total_spots;
+            occupiedEl.textContent = data.occupied;
+            freeEl.textContent = data.free;
+
+            // Atualizar grelha de vagas
+            grid.innerHTML = ""; // Limpar vagas antigas
+            if (data.spots) {
+                data.spots.forEach(spot => {
+                    const spotDiv = document.createElement('div');
+                    spotDiv.className = spot.occupied ? 'spot occupied' : 'spot free';
+                    
+                    const nameEl = document.createElement('div');
+                    nameEl.className = 'spot-name';
+                    nameEl.textContent = spot.name;
+                    
+                    const stateEl = document.createElement('div');
+                    stateEl.textContent = spot.occupied ? 'OCUPADO' : 'LIVRE';
+
+                    const probEl = document.createElement('div');
+                    probEl.className = 'spot-prob';
+                    probEl.textContent = `(${(spot.prob * 100).toFixed(1)}%)`;
+
+                    spotDiv.appendChild(nameEl);
+                    spotDiv.appendChild(stateEl);
+                    spotDiv.appendChild(probEl);
+                    grid.appendChild(spotDiv);
+                });
+            }
+        };
+
+        ws.onclose = () => {
+            console.log("Desconectado.");
+            wsStatus.textContent = "Desconectado";
+            wsStatus.style.color = "red";
+        };
+
+        ws.onerror = (error) => {
+            console.error("Erro no WebSocket:", error);
+            wsStatus.textContent = "Erro";
+            wsStatus.style.color = "red";
+        };
+    </script>
+</body>
+</html>

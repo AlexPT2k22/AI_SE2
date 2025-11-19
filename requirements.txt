@@ -2,8 +2,11 @@ fastapi
 uvicorn[standard]
 python-multipart
 python-dotenv
-fast-alpr
+fast-alpr[onnx]
+itsdangerous
 opencv-python
+cvzone
 numpy
+ultralytics
 supabase
 asyncpg
