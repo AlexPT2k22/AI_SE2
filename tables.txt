@@ -1,0 +1,84 @@
+-- Table: public.parking_event_log
+
+-- DROP TABLE IF EXISTS public.parking_event_log;
+
+CREATE TABLE IF NOT EXISTS public.parking_event_log
+(
+    id integer NOT NULL DEFAULT nextval('parking_event_log_id_seq'::regclass),
+    detected_plate text COLLATE pg_catalog."default",
+    final_plate text COLLATE pg_catalog."default",
+    det_confidence numeric(5,2),
+    ocr_confidence numeric(5,2),
+    image_path text COLLATE pg_catalog."default",
+    camera_id text COLLATE pg_catalog."default",
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT parking_event_log_pkey PRIMARY KEY (id)
+)
+
+-- Table: public.parking_payments
+
+-- DROP TABLE IF EXISTS public.parking_payments;
+
+CREATE TABLE IF NOT EXISTS public.parking_payments
+(
+    id integer NOT NULL DEFAULT nextval('parking_payments_id_seq'::regclass),
+    session_id integer NOT NULL,
+    amount numeric(10,2) NOT NULL,
+    method text COLLATE pg_catalog."default" NOT NULL,
+    reference text COLLATE pg_catalog."default",
+    paid_at timestamp with time zone NOT NULL DEFAULT now(),
+    metadata jsonb,
+    CONSTRAINT parking_payments_pkey PRIMARY KEY (id),
+    CONSTRAINT parking_payments_session_id_fkey FOREIGN KEY (session_id)
+        REFERENCES public.parking_sessions (id) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+)
+
+-- Table: public.parking_sessions
+
+-- DROP TABLE IF EXISTS public.parking_sessions;
+
+CREATE TABLE IF NOT EXISTS public.parking_sessions
+(
+    id integer NOT NULL DEFAULT nextval('parking_sessions_id_seq'::regclass),
+    plate text COLLATE pg_catalog."default" NOT NULL,
+    plate_country text COLLATE pg_catalog."default",
+    entry_time timestamp with time zone NOT NULL DEFAULT now(),
+    exit_time timestamp with time zone,
+    camera_id text COLLATE pg_catalog."default",
+    ticket_id text COLLATE pg_catalog."default",
+    amount_due numeric(10,2),
+    amount_paid numeric(10,2) DEFAULT 0,
+    status text COLLATE pg_catalog."default" NOT NULL DEFAULT 'open'::text,
+    notes text COLLATE pg_catalog."default",
+    CONSTRAINT parking_sessions_pkey PRIMARY KEY (id),
+    CONSTRAINT parking_sessions_ticket_id_key UNIQUE (ticket_id)
+)
+
+-- Table: public.parking_web_users
+
+CREATE TABLE IF NOT EXISTS public.parking_web_users
+(
+    id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    full_name text NOT NULL,
+    plate text NOT NULL,
+    plate_norm text NOT NULL,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT parking_web_users_plate_norm_key UNIQUE (plate_norm)
+);
+
+-- Table: public.parking_manual_reservations
+
+CREATE TABLE IF NOT EXISTS public.parking_manual_reservations
+(
+    id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    spot text NOT NULL,
+    plate text NOT NULL,
+    plate_norm text NOT NULL,
+    reserved_by text,
+    reserved_until timestamp with time zone NOT NULL,
+    created_at timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT parking_manual_reservations_spot_key UNIQUE (spot)
+);
+
