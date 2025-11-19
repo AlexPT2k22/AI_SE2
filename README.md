@@ -1,208 +1,160 @@
-# FastAPI ALPR Service
+# Parking Monitor – FastAPI + ALPR + Reservas
 
-## Visao geral
-- API em FastAPI que recebe imagens, executa OCR de placa com o pacote `fast_alpr` e salva o registro em PostgreSQL.
-- As imagens processadas sao gravadas em um bucket Supabase Storage (publico ou privado) e tem a URL retornada na resposta.
-- O endpoint exposto (`POST /licenseplate/upload`) valida a imagem, normaliza as confiancas de deteccao/OCR e devolve um payload JSON pronto para uso em dashboards.
+Monitor completo de estacionamento com FastAPI: alimenta‑se de um vídeo/stream, corta cada vaga, classifica com uma CNN, roda ALPR apenas nas vagas reservadas e publica tudo via WebSocket/HTTP. O frontend embutido expõe páginas para acompanhar o fluxo em tempo real, reservar vagas e um painel admin que mostra vídeo, matrículas e eventos do ALPR.
 
-## Fluxo do codigo
-1. `main.py` carrega as variaveis de ambiente com `python-dotenv`, instancia o cliente `ALPR` e o servico de armazenamento.
-2. O endpoint recebe o arquivo (`UploadFile`), valida o mime type e reconstrui a imagem com OpenCV.
-3. `fast_alpr.ALPR.predict` gera deteccao (bounding box) e OCR; `serialize_alpr_result` transforma o retorno em dict serializavel.
-4. O bytes original e enviado para o Supabase via `SupabaseStorageService.upload_and_get_url`, que decide entre URL publica ou assinada.
-5. Os metadados (placa lida, camera, confianca, URL da imagem) sao persistidos na tabela `parking_event_log` de um Postgres acessado por `asyncpg`.
-6. A resposta agrega tudo em um `JSONResponse`, incluindo o campo `alpr_raw` com o resultado completo da rede.
+---
 
-## Dependencias
-### Software base
-- Python 3.10+ com `pip`
-- Conta Supabase com bucket configurado
-- Banco PostgreSQL acessivel via URL unica (ex.: `postgresql://user:pwd@host:5432/db`)
+## 1. Pré‑requisitos
 
-### Pacotes Python principais
-```
-fastapi
-uvicorn[standard]
-python-multipart
-python-dotenv
-fast-alpr
-opencv-python
-cvzone
-numpy
-ultralytics
-supabase
-asyncpg
-```
-> Crie um `requirements.txt` com os pacotes acima ou instale diretamente via `pip install fastapi uvicorn[standard] python-multipart python-dotenv fast-alpr opencv-python cvzone numpy ultralytics supabase asyncpg`.
->
-> **Importante:** o Ultralytics YOLO exige PyTorch. Instale a versao adequada para sua GPU/CPU seguindo [pytorch.org](https://pytorch.org/get-started/locally/).
+| Item | Detalhes |
+| --- | --- |
+| Python | 3.10+ (virtualenv recomendado) |
+| Pip packages | ver `requirements.txt` (`fastapi`, `uvicorn[standard]`, `python-dotenv`, `opencv-python`, `torch/torchvision`, `fast-alpr[onnx]`, `asyncpg`, etc.) |
+| Vídeo/modelos | `video.mp4`, `parking_spots.json`, `spot_classifier.pth`, pesos YOLO opcionais |
+| PostgreSQL | `DATABASE_URL` apontando para o schema `public` (tabelas em `tables.txt`) |
+| Outros | Opcional: Supabase/ALPR externos se quiser reaproveitar scripts antigos |
 
-## Setup rapido
 ```bash
 python -m venv .venv
-.venv\Scripts\activate   # Windows
+.venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # Linux/macOS
 pip install --upgrade pip
-pip install fastapi uvicorn[standard] python-multipart python-dotenv fast-alpr opencv-python numpy supabase asyncpg
+pip install -r requirements.txt
 ```
 
-## Variaveis de ambiente
-Crie um arquivo `.env` ou exporte antes de iniciar a API.
+Principais variáveis de ambiente (configure em `.env`):
+
 ```
-SUPABASE_URL=https://<sua-instancia>.supabase.co
-SUPABASE_KEY=chave-service-role-ou-anon
-SUPABASE_BUCKET=parking-images
-SUPABASE_PUBLIC_BUCKET=false   # use true se o bucket for publico
+VIDEO_SOURCE=video.mp4
+SPOTS_FILE=parking_spots.json
+MODEL_FILE=spot_classifier.pth
+DEVICE=auto              # cpu, cuda ou auto
+SPOT_THRESHOLD=0.7
+HISTORY_LEN=5
+PROCESS_EVERY_N_FRAMES=2
+ENABLE_ALPR=true
+ALPR_DETECTOR_MODEL=yolo-v9-s-608-license-plate-end2end
+ALPR_OCR_MODEL=cct-s-v1-global-model
+ALPR_DETECTOR_PROVIDERS=CPUExecutionProvider
+ALPR_OCR_PROVIDERS=CPUExecutionProvider
+RESERVATION_HOURS=24
+SESSION_SECRET=uma-chave-qualquer
 DATABASE_URL=postgresql://user:senha@host:5432/db
 ```
 
-Campos extras opcionais:
-- `SUPABASE_PUBLIC_BUCKET=true` quando quiser URLs diretas sem assinatura.
-- Ajuste `SUPABASE_BUCKET` caso use outro bucket.
+O schema mínimo está em `tables.txt` e inclui:
 
-## Executando a API
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
+- `parking_event_log` / `parking_sessions` / `parking_payments` (herdados do ALPR antigo)
+- `parking_web_users` para os logins do site
+- `parking_manual_reservations` para reservas dinâmicas
 
-## Rotas
-- `POST /licenseplate/upload`
-  - **Query params**: `camera_id` (opcional, default `default_cam`) para identificar o ponto de captura.
-  - **Body**: `multipart/form-data` com o campo `file` contendo a imagem (`Content-Type: image/jpeg|png`).
-  - **Workflow**: valida o arquivo, roda `ALPR.predict`, faz upload da imagem para o Supabase e grava o evento em `parking_event_log`.
-  - **Resposta 200**: JSON com `plate`, confiancas de deteccao/OCR, URL da imagem (`image_url` ou link assinado) e `alpr_raw` contendo o retorno completo do modelo.
-  - **Erros comuns**:
-    - `400`: arquivo vazio, nao imagem ou falha no decode do OpenCV.
-    - `500`: problemas com Supabase, Postgres ou execucao do modelo.
+---
 
-## Teste do endpoint
-```bash
-curl -X POST "http://localhost:8000/licenseplate/upload?camera_id=gate-01" ^
-  -H "Content-Type: multipart/form-data" ^
-  -F "file=@samples/carro.jpg"
-```
-Resposta esperada:
-```json
-{
-  "plate": "ABC1234",
-  "det_confidence": 0.91,
-  "ocr_confidence": 0.88,
-  "image_url": "https://supabase.../signed",
-  "camera_id": "gate-01",
-  "alpr_raw": [
-    {
-      "detection": {"confidence": 0.93, "bounding_box": {...}},
-      "ocr": {"text": "ABC1234", "confidence": 0.88}
-    }
-  ]
-}
-```
+## 2. Fluxo operacional
 
-## Estrutura dos modulos
-- `main.py`: aplica o fluxo completo (valida entrada, roda ALPR, envia para Supabase e salva no Postgres).
-- `supabaseStorage.py`: encapsula upload, geracao de URL publica/assinada e nomenclatura dos arquivos.
-- `alpr.py`: script simples para testar o modelo localmente, util para validar se os modelos foram baixados corretamente.
-- `parking/train_yolov11.py`: utilitario para treinar um detector YOLOv11 usando o dataset Roboflow incluso em `parking/parking lot.v1i.yolov11/`.
-
-## Treinando o detector YOLOv11 para vagas (NAO APLICAVEL)
-1. Configure o ambiente: `pip install -r requirements.txt` e instale PyTorch (GPU se disponivel).
-2. O dataset Roboflow ja esta no repo em `parking/parking lot.v1i.yolov11/` com splits train/val/test descritos em `data.yaml`.
-3. Rode o script:
+1. **Marcar vagas**  
    ```bash
-   python parking/train_yolov11.py \
-     --model yolo11n.pt \
-     --epochs 150 \
-     --imgsz 768 \
-     --batch 16
+   python mark_parking_spots.py --source frame.png --output parking_spots.json --label-prefix vaga --start-index 1
    ```
-   Isso cria um run em `runs/parking-yolo11/exp/` contendo pesos (`weights/best.pt`), graficos e logs.
-4. Parametros uteis:
-   - `--data`: use outro `data.yaml` se quiser expandir o dataset.
-   - `--device cpu|0|0,1`: escolhe CPU ou GPU(s).
-   - `--resume runs/.../weights/last.pt`: retoma um treinamento anterior.
-   - `--project`/`--name`: personaliza onde salvar os artefatos.
-5. Ao terminar, utilize `best.pt` como ponto de partida para inferencias ou exporte via `yolo export`/`ultralytics` conforme necessidade.
+   - Clique nos 4 pontos de cada vaga; o JSON inclui as coordenadas e um `reference_size` usado para escalonar.
 
-### Inferencia em video com o `best.pt` (NAO APLICAVEL)
-1. Certifique-se de que o `best.pt` existe (ex.: `runs/parking-yolo11/exp2/weights/best.pt`).
-2. Rode:
+2. **Validar visualmente**  
    ```bash
-   python parking/predict_yolov11_video.py ^
-     --weights runs/parking-yolo11/exp2/weights/best.pt ^
-     --source caminho/do/video.mp4 ^
-     --conf 0.25 ^
-     --project runs/parking-yolo11/predicoes ^
-     --name teste-video ^
-     --window-width 900
+   python visualize_spots_on_video.py --video video.mp4 --spots parking_spots.json --output video_spots.mp4 --codec mp4v
    ```
-   - `--source` aceita caminhos para videos (`.mp4`, `.avi`), webcam (`0`) ou pastas com imagens.
-   - Os arquivos anotados sao salvos em `runs/parking-yolo11/predicoes/<name>/`.
-   - Use `--show` para abrir uma janela com preview, `--window-width` para controlar o tamanho exibido e `--vid-stride 2` (ou mais) para pular frames em videos longos. Pressione `q` para fechar a janela.
-3. O script escolhe automaticamente GPU se estiver disponivel; force CPU com `--device cpu`.
+   - Gera um MP4 com overlays para conferir se os polígonos batem com o vídeo.
 
-## Marcando vagas manualmente com OpenCV (NAO APLICAVEL)
-Quando precisar definir manualmente as vagas usando 4 pontos, utilize `mark_parking_spots.py`.
-```bash
-python mark_parking_spots.py ^
-  --source parking/frame_referencia.jpg ^
-  --output data/parking_spots.json ^
-  --label-prefix vaga ^
-  --start-index 1
-```
-- Se `--source` for um video (`.mp4`, `.avi` etc.), use `--frame 150` para escolher o frame base.
-- Clique ESQUERDO quatro vezes para formar uma vaga; clique DIREITO para desfazer o ultimo ponto.
-- Atalhos: `s` salva, `z` remove a ultima vaga, `c` limpa os pontos atuais, `q` encerra.
-- O JSON resultante inclui o caminho da midia, frame usado, dimensoes de referencia e a lista de vagas com os quatro pontos.
+3. **Treinar/testar o classificador**  
+   - Use os scripts em `treino/` (`train_spot_classifier.py`, etc.) para produzir o `spot_classifier.pth` (CNN simples 64×64).
 
-## Visualizando as vagas sobre o video
-Para conferir se as vagas marcadas fazem sentido no video completo, use `visualize_spots_on_video.py`.
-```bash
-python visualize_spots_on_video.py ^
-  --video parking/video.mp4 ^
-  --spots parking_spots.json ^
-  --output runs/parking-yolo11/overlays/video_spots.mp4 ^
-  --window-width 1000 ^
-  --codec avc1
-```
-- `--output` eh opcional; se definido, grava o video anotado no caminho informado.
-- Caso o JSON tenha sido marcado em uma resolucao diferente da do video, o script ajusta automaticamente as coordenadas usando as dimensoes salvas (ou tenta inferir a partir do `source`).
-- `--no-preview` desativa a janela (util quando estiver rodando em servidor sem GUI).
-- `--alpha` controla a transparencia das vagas preenchidas (default 0.35).
-- Use `--codec` para escolher o FourCC do video resultante. Por padrao o script tenta reutilizar o codec do video original; defina explicitamente (`avc1`, `mp4v`, `XVID`, etc.) se notar perda de qualidade ou incompatibilidade.
-- Pressione `q` para encerrar o preview.
+4. **Executar o monitor**  
+   ```bash
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
+   - O `parking_monitor_loop` roda em thread separada: captura vídeo, corta cada vaga, processa em batch e publica o estado via `/parking` + WebSocket `/ws`.
+   - Quando uma vaga **reservada** muda para ocupada, dispara ALPR async (fast-alpr ONNX) e só então grava a matrícula em memória/BD.
 
-## Monitorando vagas com YOLO (ocupado x livre) (NAO APLICAVEL)
-Use `monitor_parking_yolo.py` para rodar o `best.pt` (ou outro peso YOLO) em um video enquanto cruza as deteccoes com as vagas do `parking_spots.json`.
-```bash
-python monitor_parking_yolo.py ^
-  --video parking/video.mp4 ^
-  --spots parking_spots.json ^
-  --weights runs/parking-yolo11/exp2/weights/best.pt ^
-  --output runs/parking-yolo11/overlays/monitorado.mp4 ^
-  --class-names car truck bus ^
-  --overlap-threshold 0.2 ^
-  --stabilize-frames 3 ^
-  --window-width 1000 ^
-  --summary-json runs/parking-yolo11/overlays/monitorado_summary.json
-```
-- Defina `--classes` (IDs) ou `--class-names` (texto) para limitar os objetos que contam como veículo. Ex.: no COCO `2=car`, `3=motorcycle`, `5=bus`, `7=truck` (0 e 1 são pessoa/bicicleta).
-- `--overlap-threshold` estabelece a fração mínima da área da vaga coberta pelo bbox + centro do carro dentro da vaga para marcar como ocupada (default 0.15).
-- `--stabilize-frames` suaviza trocas rápidas exigindo N frames consecutivos antes de confirmar um novo estado (0 desativa).
-- `--summary-json` grava estatísticas por vaga (frames totais, frames ocupados e razão) além do vídeo. `--alpha`, `--codec`, `--no-preview`, `--device`, `--conf` e `--iou` seguem o mesmo padrão dos demais scripts.
-- O vídeo resultante exibe cada vaga em verde (livre) ou vermelho (ocupada) com nome/estado, além dos bounding boxes detectados pelo YOLO.
+5. **Fluxo web**  
+   | Página | Descrição |
+   | --- | --- |
+   | `/` | Landing page simples com links. |
+   | `/live` | Vídeo anotado + cartões das vagas com estado completo (probabilidade, placa, flags). Usa WebSocket em tempo real. |
+   | `/reservations` | Tela para o usuário final: login/registro (nome + placa), formulário para reservar vagas livres e painel de vagas (sem expor matrículas). |
+   | `/login` | Formulário único para registrar ou entrar; cria sessão via cookies. |
+   | `/admin` | Requer login; exibe vídeo, todas as vagas com placas/violação, eventos recentes do ALPR e reservas ativas (com ação de cancelamento). |
 
-## Dicas de operacao
-- Certifique-se de que o bucket existe e que a role configurada no `SUPABASE_KEY` possui acesso de leitura/escrita.
-- Quando `SUPABASE_PUBLIC_BUCKET=false`, a API devolve URLs assinadas com 1h de expiracao (ajuste `expires_in` em `upload_and_get_url` se precisar).
-- Verifique se a tabela `parking_event_log` contem as colunas usadas no `INSERT` antes de subir a API em producao.
-- Use GPUs apenas se tiver instalado os providers correspondentes; por padrao o `fast_alpr` esta configurado para CPU.
+Cada reserva dura 24h (configurável); são guardadas em `parking_manual_reservations`, e a lista é exposta tanto para os usuários quanto para o admin.
 
-## Comandos
-#### Para RTX 3070 e 16gb RAM
-```
-python mark_parking_spots.py --source frame.png --output parking_spots.json --label-prefix vaga --start-index 1
+---
 
-python visualize_spots_on_video.py --video video.mp4 --spots parking_spots.json --output video_spots.mp4 --codec mp4v
+## 3. Comandos auxiliares
 
-python monitor_parking_yolo.py --video video.mp4 --spots parking_spots.json --weights yolo11l.pt --classes 2 5 7 --conf 0.20 --iou 0.50 --overlap-threshold 0.20 --window-width 1920
-```
+| Script | Uso |
+| --- | --- |
+| `mark_parking_spots.py` | Gera `parking_spots.json` a partir de um frame/imagem (com opção de múltiplos polígonos). |
+| `visualize_spots_on_video.py` | Sobrepõe as vagas num vídeo para validação rápida. |
+| `monitor_parking_yolo.py` | Variante baseada em YOLO (detecta carros e cruza com vagas). |
+| `alpr.py` | Teste local do fast-alpr sem rodar o servidor. |
+
+---
+
+## 4. API e endpoints embutidos
+
+### Páginas HTML
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| GET | `/` | Landing page. |
+| GET | `/live` | Monitor ao vivo com vídeo + estado das vagas. |
+| GET | `/reservations` | Painel de reservas (requere login para reservar). |
+| GET | `/login` | Formulário de login/registro (sessão via cookies). |
+| GET | `/admin` | Painel completo com vídeo, vagas, eventos e reservas (precisa sessão). |
+
+### APIs em JSON / streaming
+| Método | Rota | Descrição / Resposta |
+| --- | --- | --- |
+| GET | `/parking` | JSON com o estado atual de todas as vagas (`{ "P01": {"occupied": true, "prob": 0.91, ...}, ... }`). |
+| GET | `/video_feed` | Stream MJPEG com o último frame anotado. |
+| GET | `/plate_events` | Lista das últimas matrículas detectadas (`spot`, `plate`, `ocr_conf`, `reserved`, `violation`, timestamp). |
+| WS | `/ws` | WebSocket que envia o mesmo objeto do `/parking` a cada atualização; usado pelas páginas live/reservas/admin. |
+| GET | `/api/reservations` | Lista reservas ativas (`spot`, `plate`, `expires_at`). Sempre sincronizada com o banco. |
+| POST | `/api/reservations` | Cria uma reserva para o usuário logado (body: `{ "spot": "P01" }`). Valida se a vaga existe, está livre e não há reserva ativa. |
+| DELETE | `/api/reservations/{spot}` | Cancela a reserva da vaga informada. |
+| POST | `/api/auth/register` | Regista um novo utilizador com `{ "name": "...", "plate": "AA-00-BB" }`. Responde com nome/placa e abre sessão. |
+| POST | `/api/auth/login` | Valida nome + placa e abre sessão. |
+| POST | `/api/auth/logout` | Limpa sessão atual. |
+| GET | `/api/auth/me` | Retorna os dados do utilizador autenticado ou `401`. |
+
+### Fluxo típico no `/reservations`
+1. Usuário acessa `/reservations`; se não estiver logado, atalho para `/login`.
+2. `/login` envia `POST /api/auth/register` ou `POST /api/auth/login`. A sessão fica em cookie assinado (`SessionMiddleware`).
+3. Ao reservar, a página envia `POST /api/reservations`. O backend verifica vaga livre/ocupada, cria registro no Postgres e atualiza o cache usado pelo WebSocket.
+4. Mesmo sem matrícula visível para o usuário comum, o `/admin` recebe tudo (placas, flags de violação, etc.).
+
+---
+
+## 5. Como correr end‑to‑end
+
+1. Defina e teste o classificador + JSON de vagas como descrito na Secção 2.
+2. Configure o `.env` com todos os caminhos e o `DATABASE_URL`. Crie as tabelas executando o conteúdo de `tables.txt` no Postgres:
+   ```bash
+   psql "$DATABASE_URL" -f tables.txt
+   ```
+3. `uvicorn main:app --reload` e abra:
+   - `http://localhost:8000/live` para monitorar
+   - `http://localhost:8000/login` / `/reservations` para testar o fluxo do usuário final
+   - `http://localhost:8000/admin` para validar que o ALPR está a funcionar e que os eventos aparecem
+4. (Opcional) use os scripts listados no topo para gerar os ficheiros auxiliares (`parking_spots.json`, `video_spots.mp4`, etc.).
+
+---
+
+## 6. Extras e troubleshooting
+
+- **fast-alpr ONNX**: por padrão força `CPUExecutionProvider` para evitar erros de TensorRT. Ajuste `ALPR_DETECTOR_PROVIDERS`/`ALPR_OCR_PROVIDERS` se tiver GPU + libs instaladas.
+- **Sessões**: `SESSION_SECRET` deve ser longo/aleatório em produção. As sessões expiram após 7 dias (config no middleware).
+- **Reservas**: mesmo sem DB, o sistema continua a funcionar com caches em memória, mas serão perdidos ao reiniciar. Defina `DATABASE_URL` para persistir.
+- **Logs**: a cada nova detecção de ALPR, um evento é acrescentado ao deque `g_plate_events`; consulte `/plate_events` para debugging rápido.
+- **Desempenho**: ajuste `PROCESS_EVERY_N_FRAMES`, `HISTORY_LEN` e o tamanho do batch (`IMG_SIZE`) conforme o hardware e o FPS do vídeo.
+
+---
+
+Com isso tens uma visão clara de todos os componentes (scripts auxiliares, fluxo web e endpoints) para usar e estender o monitor de estacionamento. Boas reservas! 🚗
