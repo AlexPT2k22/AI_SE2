@@ -152,7 +152,3 @@ Cada reserva dura 24h (configurável); são guardadas em `parking_manual_reserva
 - **Reservas**: mesmo sem DB, o sistema continua a funcionar com caches em memória, mas serão perdidos ao reiniciar. Defina `DATABASE_URL` para persistir.
 - **Logs**: a cada nova detecção de ALPR, um evento é acrescentado ao deque `g_plate_events`; consulte `/plate_events` para debugging rápido.
 - **Desempenho**: ajuste `PROCESS_EVERY_N_FRAMES`, `HISTORY_LEN` e o tamanho do batch (`IMG_SIZE`) conforme o hardware e o FPS do vídeo.
-
----
-
-Com isso tens uma visão clara de todos os componentes (scripts auxiliares, fluxo web e endpoints) para usar e estender o monitor de estacionamento. Boas reservas! 🚗
