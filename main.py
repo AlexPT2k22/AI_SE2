@@ -14,6 +14,8 @@ import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
 from datetime import datetime, timezone, timedelta
+from dotenv import load_dotenv
+load_dotenv()
 
 import torch
 from PIL import Image
@@ -46,7 +48,7 @@ SPOT_THRESHOLD = float(os.getenv("SPOT_THRESHOLD", 0.7))
 HISTORY_LEN = int(os.getenv("HISTORY_LEN", 5))
 PROCESS_EVERY_N_FRAMES = int(os.getenv("PROCESS_EVERY_N_FRAMES", 2))  # 1 em cada N frames
 IMG_SIZE = 64  # tamanho da imagem de input para a CNN
-
+PARKING_RATE_PER_HOUR = float(os.getenv("PARKING_RATE_PER_HOUR", 1.50))  # tarifa por hora
 
 def _str_to_bool(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
@@ -835,6 +837,21 @@ class AuthPayload(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     plate: str = Field(..., min_length=1, max_length=32)
 
+class EntryPayload(BaseModel):
+    plate: str = Field(..., min_length=1, max_length=32)
+    camera_id: str = Field(..., min_length=1)
+
+
+class ExitPayload(BaseModel):
+    plate: str = Field(..., min_length=1, max_length=32)
+    camera_id: str = Field(..., min_length=1)
+
+
+class PaymentPayload(BaseModel):
+    session_id: int = Field(..., gt=0)
+    amount: float = Field(..., gt=0)
+    method: str = Field(..., pattern="^(card|cash|mbway)$")
+
 
 @app.get("/api/reservations")
 async def list_reservations():
@@ -996,6 +1013,146 @@ def auth_me(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Nao autenticado.")
     return user
+
+@app.post("/api/entry")
+async def api_entry(payload: EntryPayload):
+    plate = payload.plate.strip()
+    camera_id = payload.camera_id.strip()
+    if not plate:
+        raise HTTPException(status_code=400, detail="Placa invalida.")
+    
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO public.parking_sessions (plate, camera_id, status)
+                VALUES ($1, $2, 'open')
+                RETURNING id, entry_time
+                """,
+                plate,
+                camera_id,
+            )
+        return JSONResponse({
+            "session_id": row["id"],
+            "entry_time": row["entry_time"].isoformat(),
+            "plate": plate,
+            "camera_id": camera_id,
+        })
+    else:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+
+
+@app.post("/api/exit")
+async def api_exit(payload: ExitPayload):
+    plate = payload.plate.strip()
+    camera_id = payload.camera_id.strip()
+    if not plate:
+        raise HTTPException(status_code=400, detail="Placa invalida.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        session = await conn.fetchrow(
+            """
+            SELECT id, entry_time
+            FROM public.parking_sessions
+            WHERE plate = $1 AND status = 'open'
+            ORDER BY entry_time DESC
+            LIMIT 1
+            """,
+            plate,
+        )
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Nenhuma sessao aberta encontrada para esta placa.")
+        
+        session_id = session["id"]
+        entry_time = session["entry_time"]
+        exit_time = datetime.now(tz=timezone.utc)
+        
+        duration_seconds = (exit_time - entry_time).total_seconds()
+        duration_hours = duration_seconds / 3600.0
+        amount_due = round(duration_hours * PARKING_RATE_PER_HOUR, 2)
+        
+        await conn.execute(
+            """
+            UPDATE public.parking_sessions
+            SET exit_time = $1, amount_due = $2
+            WHERE id = $3
+            """,
+            exit_time,
+            amount_due,
+            session_id,
+        )
+    
+    return JSONResponse({
+        "session_id": session_id,
+        "plate": plate,
+        "entry_time": entry_time.isoformat(),
+        "exit_time": exit_time.isoformat(),
+        "amount_due": amount_due,
+        "camera_id": camera_id,
+    })
+
+
+@app.post("/api/payments")
+async def api_payments(payload: PaymentPayload):
+    session_id = payload.session_id
+    amount = round(payload.amount, 2)
+    method = payload.method
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        session = await conn.fetchrow(
+            """
+            SELECT id, amount_due, amount_paid, status
+            FROM public.parking_sessions
+            WHERE id = $1
+            """,
+            session_id,
+        )
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
+        
+        await conn.execute(
+            """
+            INSERT INTO public.parking_payments (session_id, amount, method)
+            VALUES ($1, $2, $3)
+            """,
+            session_id,
+            amount,
+            method,
+        )
+        
+        current_paid = session["amount_paid"] or 0
+        new_paid = round(current_paid + amount, 2)
+        amount_due = session["amount_due"] or 0
+        
+        new_status = 'paid' if new_paid >= amount_due else session["status"]
+        
+        await conn.execute(
+            """
+            UPDATE public.parking_sessions
+            SET amount_paid = $1, status = $2
+            WHERE id = $3
+            """,
+            new_paid,
+            new_status,
+            session_id,
+        )
+    
+    return JSONResponse({
+        "session_id": session_id,
+        "amount_paid": new_paid,
+        "amount_due": amount_due,
+        "status": new_status,
+        "payment_method": method,
+        "payment_amount": amount,
+    })
 
 
 @app.get("/")
@@ -1482,11 +1639,30 @@ async def websocket_endpoint(websocket: WebSocket):
 # ------------------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
-    global event_loop
+    global event_loop, db_pool
     event_loop = asyncio.get_running_loop()
+    
+    # Criar pool de conexões à base de dados
+    if DATABASE_URL:
+        try:
+            db_pool = await asyncpg.create_pool(
+                DATABASE_URL,
+                min_size=2,
+                max_size=10,
+                command_timeout=60
+            )
+            print("[INFO] Pool de conexões PostgreSQL criado com sucesso.")
+            await refresh_users_cache()
+            await refresh_reservations_cache()
+        except Exception as e:
+            print(f"[ERRO] Falha ao conectar à base de dados: {e}")
+            db_pool = None
+    else:
+        print("[WARN] DATABASE_URL não configurada.")
+    
     t = threading.Thread(target=parking_monitor_loop, daemon=True)
     t.start()
-    print("[INFO] Thread de monitorizaÃ§Ã£o iniciada.")
+    print("[INFO] Thread de monitorização iniciada.")
 @app.get("/admin")
 def admin_page(request: Request):
     user = get_session_user(request)
