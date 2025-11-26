@@ -25,21 +25,16 @@ pip install -r requirements.txt
 Principais variáveis de ambiente (configure em `.env`):
 
 ```
-VIDEO_SOURCE=video.mp4
-SPOTS_FILE=parking_spots.json
-MODEL_FILE=spot_classifier.pth
-DEVICE=auto              # cpu, cuda ou auto
-SPOT_THRESHOLD=0.7
-HISTORY_LEN=5
-PROCESS_EVERY_N_FRAMES=2
-ENABLE_ALPR=true
-ALPR_DETECTOR_MODEL=yolo-v9-s-608-license-plate-end2end
-ALPR_OCR_MODEL=cct-s-v1-global-model
-ALPR_DETECTOR_PROVIDERS=CPUExecutionProvider
-ALPR_OCR_PROVIDERS=CPUExecutionProvider
-RESERVATION_HOURS=24
-SESSION_SECRET=uma-chave-qualquer
-DATABASE_URL=postgresql://user:senha@host:5432/db
+SUPABASE_URL=url do supabase
+SUPABASE_KEY=key do supabase
+SUPABASE_PUBLIC_BUCKET=false
+DATABASE_URL=postgresql://etc..
+PARKING_RATE_PER_HOUR=5.0
+AUTO_CREATE_SESSION_FROM_OCR=true  # cria sessao automaticamente quando o OCR encontra placa
+AUTO_CHARGE_ON_EXIT=true       # debita automaticamente ao fechar a sessao
+AUTO_CHARGE_METHOD=auto_charge # texto armazenado em parking_payments.method nos debitos automaticos
+PARKING_BILLING_MINUTE_STEP=1  # arredonda o tempo para multiplos de X minutos
+PARKING_MINIMUM_FEE=0  
 ```
 
 O schema mínimo está em `tables.txt` e inclui:
