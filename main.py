@@ -28,7 +28,7 @@ try:
 except ImportError:  # pragma: no cover - fallback when package missing
     ALPR = None
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
@@ -1014,12 +1014,62 @@ def auth_me(request: Request):
         raise HTTPException(status_code=401, detail="Nao autenticado.")
     return user
 
+
+# ------------------------------------------------------------
+# Função auxiliar para processar imagem e detectar matrícula
+# ------------------------------------------------------------
+async def process_plate_image(image_bytes: bytes) -> Optional[str]:
+    """
+    Processa uma imagem e extrai a matrícula usando fast-alpr.
+    Retorna a matrícula detectada ou None se não detectar nada.
+    """
+    try:
+        # Converter bytes para numpy array
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return None
+        
+        # Obter instância ALPR
+        alpr = get_alpr_instance()
+        if alpr is None:
+            return None
+        
+        # Executar detecção
+        results = alpr.predict(img)
+        
+        if not results:
+            return None
+        
+        # Pegar o primeiro resultado
+        first = results[0] if isinstance(results, (list, tuple)) else results
+        plate_text = getattr(first.ocr, "text", None) if getattr(first, "ocr", None) else None
+        
+        return plate_text
+        
+    except Exception as e:
+        print(f"[ERRO] Falha ao processar imagem ALPR: {e}")
+        return None
+
+
 @app.post("/api/entry")
-async def api_entry(payload: EntryPayload):
-    plate = payload.plate.strip()
-    camera_id = payload.camera_id.strip()
+async def api_entry(camera_id: str, image: UploadFile):
+    """
+    Registra entrada de veículo.
+    Recebe imagem da matrícula do ESP32 e usa ALPR para detectar a placa.
+    """
+    if not camera_id:
+        raise HTTPException(status_code=400, detail="camera_id obrigatório.")
+    
+    # Ler imagem
+    image_bytes = await image.read()
+    
+    # Processar com ALPR
+    plate = await process_plate_image(image_bytes)
+    
     if not plate:
-        raise HTTPException(status_code=400, detail="Placa invalida.")
+        raise HTTPException(status_code=400, detail="Nenhuma matricula detectada na imagem.")
     
     if db_pool:
         async with db_pool.acquire() as conn:
@@ -1043,11 +1093,22 @@ async def api_entry(payload: EntryPayload):
 
 
 @app.post("/api/exit")
-async def api_exit(payload: ExitPayload):
-    plate = payload.plate.strip()
-    camera_id = payload.camera_id.strip()
+async def api_exit(camera_id: str, image: UploadFile):
+    """
+    Registra saída de veículo.
+    Recebe imagem da matrícula do ESP32 e usa ALPR para detectar a placa.
+    """
+    if not camera_id:
+        raise HTTPException(status_code=400, detail="camera_id obrigatório.")
+    
+    # Ler imagem
+    image_bytes = await image.read()
+    
+    # Processar com ALPR
+    plate = await process_plate_image(image_bytes)
+    
     if not plate:
-        raise HTTPException(status_code=400, detail="Placa invalida.")
+        raise HTTPException(status_code=400, detail="Nenhuma matricula detectada na imagem.")
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
@@ -1094,6 +1155,7 @@ async def api_exit(payload: ExitPayload):
         "amount_due": amount_due,
         "camera_id": camera_id,
     })
+
 
 
 @app.post("/api/payments")
