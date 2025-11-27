@@ -28,12 +28,17 @@ try:
 except ImportError:  # pragma: no cover - fallback when package missing
     ALPR = None
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from spot_classifier import SpotClassifier
+
+try:
+    from supabaseStorage import SupabaseStorageService
+except ImportError:
+    SupabaseStorageService = None
 
 
 # ------------------------------------------------------------
@@ -73,6 +78,12 @@ DEFAULT_RESERVATION_HOURS = float(os.getenv("RESERVATION_HOURS", "24"))
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret-change-me")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Supabase Storage Configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "parking-images")
+SUPABASE_PUBLIC_BUCKET = _str_to_bool(os.getenv("SUPABASE_PUBLIC_BUCKET", "false"))
+
 if ENABLE_ALPR and ALPR is None:
     print("[WARN] fast_alpr nao encontrado; ALPR desativado.")
     ENABLE_ALPR = False
@@ -101,6 +112,22 @@ g_active_reservations: Dict[str, Dict[str, Any]] = {}
 g_users_lock = threading.Lock()
 g_users: Dict[str, Dict[str, Any]] = {}
 db_pool: Optional[asyncpg.Pool] = None
+
+# Supabase Storage Service
+supabase_storage: Optional[SupabaseStorageService] = None
+if SupabaseStorageService and SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase_storage = SupabaseStorageService(
+            supabase_url=SUPABASE_URL,
+            supabase_key=SUPABASE_KEY,
+            bucket_name=SUPABASE_BUCKET,
+            public_bucket=SUPABASE_PUBLIC_BUCKET,
+        )
+        print(f"[INFO] Supabase Storage inicializado: bucket '{SUPABASE_BUCKET}'")
+    except Exception as e:
+        print(f"[WARN] Falha ao inicializar Supabase Storage: {e}")
+        supabase_storage = None
+
 
 alpr_executor: Optional[ThreadPoolExecutor] = ThreadPoolExecutor(max_workers=ALPR_WORKERS) if ENABLE_ALPR else None
 _alpr_instance_lock = threading.Lock()
@@ -1054,7 +1081,7 @@ async def process_plate_image(image_bytes: bytes) -> Optional[str]:
 
 
 @app.post("/api/entry")
-async def api_entry(camera_id: str, image: UploadFile):
+async def api_entry(camera_id: str = Form(...), image: UploadFile = File(...)):
     """
     Registra entrada de veículo.
     Recebe imagem da matrícula do ESP32 e usa ALPR para detectar a placa.
@@ -1073,27 +1100,68 @@ async def api_entry(camera_id: str, image: UploadFile):
     
     if db_pool:
         async with db_pool.acquire() as conn:
+            # Verificar se já existe uma sessão aberta para esta matrícula
+            existing_session = await conn.fetchrow(
+                """
+                SELECT id, entry_time, camera_id
+                FROM public.parking_sessions
+                WHERE plate = $1 AND status = 'open'
+                ORDER BY entry_time DESC
+                LIMIT 1
+                """,
+                plate,
+            )
+            
+            if existing_session:
+                # Já existe sessão aberta - NÃO faz upload da imagem
+                return JSONResponse({
+                    "session_id": existing_session["id"],
+                    "entry_time": existing_session["entry_time"].isoformat(),
+                    "plate": plate,
+                    "camera_id": existing_session["camera_id"],
+                    "duplicate": True,
+                    "message": "Veiculo ja tem uma sessao aberta. Retornando sessao existente."
+                })
+            
+            # Não existe sessão aberta - fazer upload da imagem AGORA
+            image_url = None
+            if supabase_storage:
+                try:
+                    image_url = supabase_storage.upload_and_get_url(
+                        image_bytes=image_bytes,
+                        plate=plate,
+                        expires_in=365 * 24 * 3600,  # 1 ano
+                        ext="jpg"
+                    )
+                    print(f"[INFO] Imagem uploaded: {image_url}")
+                except Exception as e:
+                    print(f"[WARN] Falha ao fazer upload da imagem: {e}")
+                    # Não bloqueia o fluxo caso falhe o upload
+            
+            # Criar nova entrada com a URL da imagem
             row = await conn.fetchrow(
                 """
-                INSERT INTO public.parking_sessions (plate, camera_id, status)
-                VALUES ($1, $2, 'open')
+                INSERT INTO public.parking_sessions (plate, camera_id, status, entry_image_url)
+                VALUES ($1, $2, 'open', $3)
                 RETURNING id, entry_time
                 """,
                 plate,
                 camera_id,
+                image_url,
             )
         return JSONResponse({
             "session_id": row["id"],
             "entry_time": row["entry_time"].isoformat(),
             "plate": plate,
             "camera_id": camera_id,
+            "duplicate": False,
         })
     else:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
 
 
 @app.post("/api/exit")
-async def api_exit(camera_id: str, image: UploadFile):
+async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
     """
     Registra saída de veículo.
     Recebe imagem da matrícula do ESP32 e usa ALPR para detectar a placa.
@@ -1116,7 +1184,7 @@ async def api_exit(camera_id: str, image: UploadFile):
     async with db_pool.acquire() as conn:
         session = await conn.fetchrow(
             """
-            SELECT id, entry_time
+            SELECT id, entry_time, exit_time, status
             FROM public.parking_sessions
             WHERE plate = $1 AND status = 'open'
             ORDER BY entry_time DESC
@@ -1128,6 +1196,16 @@ async def api_exit(camera_id: str, image: UploadFile):
         if not session:
             raise HTTPException(status_code=404, detail="Nenhuma sessao aberta encontrada para esta placa.")
         
+        # Verificar se já tem saída registrada (prevenção de dupla saída)
+        if session["exit_time"] is not None:
+            return JSONResponse({
+                "session_id": session["id"],
+                "plate": plate,
+                "duplicate": True,
+                "message": "Saida ja registrada para esta sessao.",
+                "exit_time": session["exit_time"].isoformat(),
+            })
+        
         session_id = session["id"]
         entry_time = session["entry_time"]
         exit_time = datetime.now(tz=timezone.utc)
@@ -1136,14 +1214,30 @@ async def api_exit(camera_id: str, image: UploadFile):
         duration_hours = duration_seconds / 3600.0
         amount_due = round(duration_hours * PARKING_RATE_PER_HOUR, 2)
         
+        # Upload da imagem de saída para Supabase
+        exit_image_url = None
+        if supabase_storage:
+            try:
+                exit_image_url = supabase_storage.upload_and_get_url(
+                    image_bytes=image_bytes,
+                    plate=f"{plate}/exit",  # Pasta separada para saídas
+                    expires_in=365 * 24 * 3600,  # 1 ano
+                    ext="jpg"
+                )
+                print(f"[INFO] Imagem de saída uploaded: {exit_image_url}")
+            except Exception as e:
+                print(f"[WARN] Falha ao fazer upload da imagem de saída: {e}")
+        
+        # Atualizar sessão com saída e marcar como 'paid' (fechar sessão)
         await conn.execute(
             """
             UPDATE public.parking_sessions
-            SET exit_time = $1, amount_due = $2
-            WHERE id = $3
+            SET exit_time = $1, amount_due = $2, status = 'paid', exit_image_url = $3
+            WHERE id = $4
             """,
             exit_time,
             amount_due,
+            exit_image_url,
             session_id,
         )
     
