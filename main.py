@@ -1316,12 +1316,193 @@ async def api_payments(payload: PaymentPayload):
     
     return JSONResponse({
         "session_id": session_id,
-        "amount_paid": new_paid,
-        "amount_due": amount_due,
+        "amount_paid": float(new_paid),
+        "amount_due": float(amount_due),
         "status": new_status,
         "payment_method": method,
-        "payment_amount": amount,
+        "payment_amount": float(amount),
     })
+
+
+# ------------------------------------------------------------
+# Sessions & Admin Endpoints
+# ------------------------------------------------------------
+@app.get("/api/sessions")
+async def list_sessions(
+    status: Optional[str] = None,
+    plate: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """List parking sessions with optional filters."""
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    # Build query with filters
+    query = "SELECT id, plate, camera_id, entry_time, exit_time, amount_due, amount_paid, status FROM public.parking_sessions WHERE 1=1"
+    params = []
+    param_idx = 1
+    
+    if status:
+        query += f" AND status = ${param_idx}"
+        params.append(status)
+        param_idx += 1
+    
+    if plate:
+        plate_norm = normalize_plate_text(plate)
+        if plate_norm:
+            query += f" AND plate ILIKE ${param_idx}"
+            params.append(f"%{plate_norm}%")
+            param_idx += 1
+    
+    query += f" ORDER BY entry_time DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
+    params.extend([limit, offset])
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+    
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "id": row["id"],
+            "plate": row["plate"],
+            "camera_id": row["camera_id"],
+            "entry_time": row["entry_time"].isoformat() if row["entry_time"] else None,
+            "exit_time": row["exit_time"].isoformat() if row["exit_time"] else None,
+            "amount_due": float(row["amount_due"]) if row["amount_due"] else 0,
+            "amount_paid": float(row["amount_paid"]) if row["amount_paid"] else 0,
+            "status": row["status"],
+        })
+    
+    return JSONResponse(sessions)
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: int):
+    """Get detailed information about a specific session."""
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        session = await conn.fetchrow(
+            """
+            SELECT id, plate, camera_id, entry_time, exit_time, 
+                   amount_due, amount_paid, status, entry_image_url, exit_image_url
+            FROM public.parking_sessions
+            WHERE id = $1
+            """,
+            session_id
+        )
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
+        
+        # Get payments for this session
+        payments = await conn.fetch(
+            "SELECT id, amount, method, paid_at FROM public.parking_payments WHERE session_id = $1 ORDER BY paid_at DESC",
+            session_id
+        )
+    
+    payment_list = [
+        {
+            "id": p["id"],
+            "amount": float(p["amount"]),
+            "method": p["method"],
+            "paid_at": p["paid_at"].isoformat()
+        }
+        for p in payments
+    ]
+    
+    return JSONResponse({
+        "id": session["id"],
+        "plate": session["plate"],
+        "camera_id": session["camera_id"],
+        "entry_time": session["entry_time"].isoformat() if session["entry_time"] else None,
+        "exit_time": session["exit_time"].isoformat() if session["exit_time"] else None,
+        "amount_due": float(session["amount_due"]) if session["amount_due"] else 0,
+        "amount_paid": float(session["amount_paid"]) if session["amount_paid"] else 0,
+        "status": session["status"],
+        "entry_image_url": session["entry_image_url"],
+        "exit_image_url": session["exit_image_url"],
+        "payments": payment_list
+    })
+
+
+@app.get("/api/admin/stats")
+async def admin_stats():
+    """Get admin dashboard statistics."""
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        # Total sessions
+        total_sessions = await conn.fetchval("SELECT COUNT(*) FROM public.parking_sessions")
+        
+        # Active sessions (open status)
+        active_sessions = await conn.fetchval("SELECT COUNT(*) FROM public.parking_sessions WHERE status = 'open'")
+        
+        # Total revenue (sum of amount_due for paid sessions)
+        total_revenue = await conn.fetchval("SELECT COALESCE(SUM(amount_due), 0) FROM public.parking_sessions WHERE status = 'paid'")
+        
+        # Today's sessions
+        today_sessions = await conn.fetchval(
+            "SELECT COUNT(*) FROM public.parking_sessions WHERE entry_time::date = CURRENT_DATE"
+        )
+        
+        # Average duration (in minutes) for completed sessions
+        avg_duration = await conn.fetchval(
+            """
+            SELECT AVG(EXTRACT(EPOCH FROM (exit_time - entry_time)) / 60)
+            FROM public.parking_sessions
+            WHERE exit_time IS NOT NULL AND entry_time IS NOT NULL
+            """
+        )
+        
+        # Recent sessions
+        recent = await conn.fetch(
+            """
+            SELECT id, plate, entry_time, exit_time, amount_due, status
+            FROM public.parking_sessions
+            ORDER BY entry_time DESC
+            LIMIT 10
+            """
+        )
+    
+    recent_sessions = [
+        {
+            "id": r["id"],
+            "plate": r["plate"],
+            "entry_time": r["entry_time"].isoformat() if r["entry_time"] else None,
+            "exit_time": r["exit_time"].isoformat() if r["exit_time"] else None,
+            "amount_due": float(r["amount_due"]) if r["amount_due"] else 0,
+            "status": r["status"]
+        }
+        for r in recent
+    ]
+    
+    # Get current spot occupancy
+    with g_lock:
+        total_spots = len(g_spot_status)
+        occupied_spots = sum(1 for spot in g_spot_status.values() if spot.get("occupied"))
+    
+    return JSONResponse({
+        "total_sessions": total_sessions,
+        "active_sessions": active_sessions,
+        "total_revenue": float(total_revenue) if total_revenue else 0,
+        "today_sessions": today_sessions,
+        "avg_duration_minutes": float(avg_duration) if avg_duration else 0,
+        "total_spots": total_spots,
+        "occupied_spots": occupied_spots,
+        "recent_sessions": recent_sessions
+    })
+
+
+@app.post("/api/sessions/{session_id}/simulate-payment")
+async def simulate_payment(session_id: int, payload: PaymentPayload):
+    """Simulate payment for a session (for academic purposes)."""
+    # This just calls the existing payment endpoint
+    return await api_payments(payload)
+
 
 
 @app.get("/")

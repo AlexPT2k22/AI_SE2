@@ -44,6 +44,8 @@ const Navbar = () => {
                     <Link to="/" className={isActive('/')} onClick={closeMenu}>Home</Link>
                     <Link to="/live" className={isActive('/live')} onClick={closeMenu}>Monitor</Link>
                     <Link to="/reservar" className={isActive('/reservar')} onClick={closeMenu}>Reservar</Link>
+                    <Link to="/estado" className={isActive('/estado')} onClick={closeMenu}>Minhas Sessões</Link>
+                    <Link to="/admin" className={isActive('/admin')} onClick={closeMenu}>Admin</Link>
                     <Link to="/login" className={isActive('/login')} onClick={closeMenu}>Login</Link>
                 </div>
             </div>
