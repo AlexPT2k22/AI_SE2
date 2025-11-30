@@ -1,0 +1,104 @@
+.occupancy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: var(--spacing-4);
+    margin-top: var(--spacing-6);
+}
+
+.spot-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-surface-hover);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-3);
+    text-align: center;
+    position: relative;
+    transition: var(--transition-base);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    box-shadow: var(--shadow-sm);
+}
+
+.spot-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-surface-active);
+}
+
+.spot-id {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    margin-bottom: var(--spacing-1);
+}
+
+.spot-status {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-2);
+}
+
+.spot-badge {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: var(--border-radius-full);
+    font-weight: var(--font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Status Variants */
+.spot-card.free {
+    border-top: 4px solid var(--color-success);
+}
+
+.spot-card.free .spot-id {
+    color: var(--color-success);
+}
+
+.spot-card.occupied {
+    border-top: 4px solid var(--color-danger);
+    background-color: rgba(244, 63, 94, 0.05);
+}
+
+.spot-card.occupied .spot-id {
+    color: var(--color-danger);
+}
+
+.spot-card.reserved {
+    border-color: var(--color-warning);
+    box-shadow: 0 0 0 1px var(--color-warning);
+}
+
+.spot-card.violation {
+    border-color: var(--color-danger);
+    background-color: rgba(244, 63, 94, 0.1);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 6px rgba(244, 63, 94, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+    }
+}
+
+.badge-reserved {
+    background-color: var(--color-warning);
+    color: #fff;
+}
+
+.badge-violation {
+    background-color: var(--color-danger);
+    color: white;
+}

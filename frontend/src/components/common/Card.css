@@ -1,0 +1,13 @@
+.card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-surface-hover);
+    border-radius: var(--border-radius-xl);
+    padding: var(--spacing-6);
+    color: var(--color-text-primary);
+    box-shadow: var(--shadow-lg);
+    transition: var(--transition-base);
+}
+
+.card:hover {
+    border-color: var(--color-surface-active);
+}
