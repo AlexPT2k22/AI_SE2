@@ -1045,10 +1045,11 @@ def auth_me(request: Request):
 # ------------------------------------------------------------
 # Função auxiliar para processar imagem e detectar matrícula
 # ------------------------------------------------------------
-async def process_plate_image(image_bytes: bytes) -> Optional[str]:
+async def process_plate_image(image_bytes: bytes) -> Tuple[Optional[str], Optional[bytes]]:
     """
     Processa uma imagem e extrai a matrícula usando fast-alpr.
-    Retorna a matrícula detectada ou None se não detectar nada.
+    Retorna uma tupla: (matrícula detectada, imagem anotada em bytes)
+    ou (None, None) se não detectar nada.
     """
     try:
         # Converter bytes para numpy array
@@ -1056,28 +1057,38 @@ async def process_plate_image(image_bytes: bytes) -> Optional[str]:
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if img is None:
-            return None
+            return None, None
         
         # Obter instância ALPR
         alpr = get_alpr_instance()
         if alpr is None:
-            return None
+            return None, None
         
         # Executar detecção
         results = alpr.predict(img)
         
         if not results:
-            return None
+            return None, None
         
         # Pegar o primeiro resultado
         first = results[0] if isinstance(results, (list, tuple)) else results
         plate_text = getattr(first.ocr, "text", None) if getattr(first, "ocr", None) else None
         
-        return plate_text
+        # Desenhar as predições na imagem
+        annotated_img = alpr.draw_predictions(img)
+        
+        # Converter imagem anotada de volta para bytes (JPEG)
+        success, buffer = cv2.imencode('.jpg', annotated_img)
+        if success:
+            annotated_bytes = buffer.tobytes()
+        else:
+            annotated_bytes = None
+        
+        return plate_text, annotated_bytes
         
     except Exception as e:
         print(f"[ERRO] Falha ao processar imagem ALPR: {e}")
-        return None
+        return None, None
 
 
 @app.post("/api/entry")
@@ -1092,11 +1103,14 @@ async def api_entry(camera_id: str = Form(...), image: UploadFile = File(...)):
     # Ler imagem
     image_bytes = await image.read()
     
-    # Processar com ALPR
-    plate = await process_plate_image(image_bytes)
+    # Processar com ALPR e obter imagem anotada
+    plate, annotated_image_bytes = await process_plate_image(image_bytes)
     
     if not plate:
         raise HTTPException(status_code=400, detail="Nenhuma matricula detectada na imagem.")
+    
+    # Usar imagem anotada para upload, ou original se anotação falhou
+    upload_bytes = annotated_image_bytes if annotated_image_bytes else image_bytes
     
     if db_pool:
         async with db_pool.acquire() as conn:
@@ -1113,22 +1127,18 @@ async def api_entry(camera_id: str = Form(...), image: UploadFile = File(...)):
             )
             
             if existing_session:
-                # Já existe sessão aberta - NÃO faz upload da imagem
-                return JSONResponse({
-                    "session_id": existing_session["id"],
-                    "entry_time": existing_session["entry_time"].isoformat(),
-                    "plate": plate,
-                    "camera_id": existing_session["camera_id"],
-                    "duplicate": True,
-                    "message": "Veiculo ja tem uma sessao aberta. Retornando sessao existente."
-                })
+                # Já existe sessão aberta - retornar HTTP 409 (Conflict)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Veículo {plate} já tem uma sessão aberta (ID: {existing_session['id']}). Acesso negado."
+                )
             
             # Não existe sessão aberta - fazer upload da imagem AGORA
             image_url = None
             if supabase_storage:
                 try:
                     image_url = supabase_storage.upload_and_get_url(
-                        image_bytes=image_bytes,
+                        image_bytes=upload_bytes,
                         plate=plate,
                         expires_in=365 * 24 * 3600,  # 1 ano
                         ext="jpg"
@@ -1172,11 +1182,14 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
     # Ler imagem
     image_bytes = await image.read()
     
-    # Processar com ALPR
-    plate = await process_plate_image(image_bytes)
+    # Processar com ALPR e obter imagem anotada
+    plate, annotated_image_bytes = await process_plate_image(image_bytes)
     
     if not plate:
         raise HTTPException(status_code=400, detail="Nenhuma matricula detectada na imagem.")
+    
+    # Usar imagem anotada para upload, ou original se anotação falhou
+    upload_bytes = annotated_image_bytes if annotated_image_bytes else image_bytes
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
@@ -1219,7 +1232,7 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
         if supabase_storage:
             try:
                 exit_image_url = supabase_storage.upload_and_get_url(
-                    image_bytes=image_bytes,
+                    image_bytes=upload_bytes,
                     plate=f"{plate}/exit",  # Pasta separada para saídas
                     expires_in=365 * 24 * 3600,  # 1 ano
                     ext="jpg"
