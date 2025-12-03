@@ -1,189 +1,208 @@
-# 🚗 Sistema Inteligente de Gestão de Estacionamento
+# 🚗 Sistema Inteligente de Gestão de Estacionamento (AI Smart Parking)
 
-Sistema completo de monitorização e gestão de estacionamento com detecção automática de vagas, reconhecimento de matrículas (ALPR) e gestão de pagamentos. Desenvolvido com FastAPI, Computer Vision e IoT (ESP32).
+Sistema completo e moderno de monitorização e gestão de estacionamento que utiliza Inteligência Artificial (Computer Vision) para detecção de vagas em tempo real e reconhecimento de matrículas (ALPR). A solução integra hardware IoT (ESP32), um backend robusto em FastAPI e uma interface frontend moderna em React.
+
+![Parking Monitor](frame.png)
 
 ---
 
 ## 📋 Índice
 
 - [Funcionalidades](#-funcionalidades)
-- [Tecnologias Utilizadas](#-tecnologias-utilizadas)
 - [Arquitetura do Sistema](#-arquitetura-do-sistema)
+- [Tecnologias Utilizadas](#-tecnologias-utilizadas)
+- [Pré-requisitos](#-pré-requisitos)
 - [Instalação](#-instalação)
-- [Configuração](#%EF%B8%8F-configuração)
+  - [Backend](#1-configuração-do-backend)
+  - [Frontend](#2-configuração-do-frontend)
+  - [Base de Dados](#3-configuração-da-base-de-dados)
+- [Configuração (.env)](#%EF%B8%8F-configuração-detalhada)
 - [Execução](#-execução)
-- [API Endpoints](#-api-endpoints)
-- [Integração ESP32](#-integração-esp32)
-- [Base de Dados](#%EF%B8%8F-base-de-dados)
-- [Interface Web](#-interface-web)
+- [API Endpoints](#-documentação-da-api)
+- [Integração IoT (ESP32)](#-integração-iot-esp32)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
 - [Troubleshooting](#-troubleshooting)
 
 ---
 
 ## ✨ Funcionalidades
 
-### 🎯 Monitorização de Vagas
-- **Detecção automática** de ocupação de vagas via CNN (Convolutional Neural Network)
-- **Processamento de vídeo** em tempo real (suporta ficheiros, webcam e RTSP)
-- **WebSocket** para atualizações em tempo real
-- **Anotação visual** das vagas no stream de vídeo
+### 👁️ Visão Computacional & AI
+- **Detecção de Vagas em Tempo Real**: Utiliza um modelo CNN (ResNet/Custom) treinado para classificar vagas como "Livre" ou "Ocupada" a partir de feeds de vídeo (Câmeras IP/RTSP ou arquivos).
+- **Reconhecimento de Matrículas (ALPR)**: Integração com `fast-alpr` (baseado em YOLO) para leitura automática de matrículas nas entradas e saídas.
+- **Validação de Reservas**: Verifica automaticamente se um veículo estacionado numa vaga reservada possui autorização.
 
-### 🔍 Reconhecimento de Matrículas (ALPR)
-- **Detecção automática** de matrículas usando fast-alpr
-- **OCR de alta precisão** para leitura de matrículas portuguesas
-- **Processamento em background** para não bloquear detecção de vagas
-- **Validação de matrículas** autorizadas em vagas reservadas
+### 🅿️ Gestão de Estacionamento
+- **Controlo de Acesso**: Registo automático de entradas e saídas via câmeras nos portões.
+- **Gestão de Sessões**: Cálculo automático do tempo de permanência e valor a pagar.
+- **Sistema de Reservas**: Permite aos utilizadores reservar vagas específicas por um determinado período.
+- **Pagamentos**: Simulação de pagamentos via Cartão, MBWay ou Dinheiro.
 
-### 🎫 Sistema de Reservas
-- **Reservas manuais** de vagas por utilizadores
-- **Validação automática** de matrículas em vagas reservadas
-- **Deteção de violações** (veículo não autorizado em vaga reservada)
-- **Expiração automática** de reservas
+### 💻 Interfaces
+- **Dashboard Web (Frontend)**: Interface moderna em React para visualização do estado do parque em tempo real.
+- **Painel Administrativo**: Gestão de vagas, visualização de logs de acesso e estatísticas financeiras.
+- **WebSocket**: Atualizações instantâneas do estado das vagas sem necessidade de refresh.
 
-### 💳 Gestão de Sessões e Pagamentos
-- **Registo automático** de entrada/saída via ESP32
-- **Cálculo automático** de valores com base no tempo de permanência
-- **Sistema de pagamentos** com múltiplos métodos (cartão, dinheiro, MBWay)
-- **Histórico completo** de sessões e transações
+---
 
-### 🌐 Interface Web
-- **Dashboard em tempo real** com estado das vagas
-- **Sistema de autenticação** por nome + matrícula
-- **Gestão de reservas** pelos utilizadores
-- **Painel administrativo** com estatísticas
+## 🏗 Arquitetura do Sistema
+
+O sistema é composto por três módulos principais que comunicam entre si:
+
+```mermaid
+graph TD
+    subgraph IoT_Hardware
+        ESP32_In[ESP32 Entrada] -->|POST Image| API
+        ESP32_Out[ESP32 Saída] -->|POST Image| API
+        Camera[Câmera IP/RTSP] -->|RTSP Stream| CV_Engine
+    end
+
+    subgraph Backend_Server
+        API[FastAPI Server]
+        CV_Engine[Computer Vision Engine]
+        WS[WebSocket Manager]
+        
+        CV_Engine -->|Update State| WS
+        API -->|CRUD| DB[(PostgreSQL)]
+        API -->|Upload| Storage[Supabase Storage]
+    end
+
+    subgraph Frontend_Client
+        Web[React Web App]
+        Web -->|HTTP| API
+        Web -->|WS| WS
+    end
+```
 
 ---
 
 ## 🛠 Tecnologias Utilizadas
 
 ### Backend
-- **FastAPI** - Framework web assíncrono de alta performance
-- **Python 3.13** - Linguagem de programação
-- **asyncpg** - Driver PostgreSQL assíncrono
-- **python-dotenv** - Gestão de variáveis de ambiente
+- **Python 3.13**
+- **FastAPI**: Framework web de alta performance.
+- **Uvicorn**: Servidor ASGI.
+- **AsyncPG**: Driver assíncrono para PostgreSQL.
+- **PyTorch & Torchvision**: Para execução dos modelos de Deep Learning.
+- **OpenCV**: Processamento de imagem.
+- **Fast-ALPR**: Detecção e OCR de matrículas.
 
-### Computer Vision & AI
-- **PyTorch** - Framework de Deep Learning
-- **OpenCV (cv2)** - Processamento de imagem e vídeo
-- **fast-alpr** - Reconhecimento de matrículas
-- **torchvision** - Transformações de imagem
-- **PIL (Pillow)** - Manipulação de imagens
+### Frontend
+- **React**: Biblioteca JS para interfaces.
+- **Vite**: Build tool rápida.
+- **TailwindCSS** (via index.css): Estilização.
+- **Axios**: Requisições HTTP.
 
-### Base de Dados
-- **PostgreSQL** - Base de dados relacional
-- **Supabase** (opcional) - Backend-as-a-Service com PostgreSQL
-
-### Hardware & IoT
-- **ESP32** - Microcontrolador para captura de matrículas
-- **Câmeras IP** (RTSP) - Monitorização do parque
-
----
-
-## 🏗 Arquitetura do Sistema
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        FastAPI Server                        │
-│  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐ │
-│  │  Video Thread │  │ ALPR Thread  │  │  WebSocket WSS   │ │
-│  │  (CNN Model)  │  │ (fast-alpr)  │  │  (Real-time)     │ │
-│  └───────────────┘  └──────────────┘  └──────────────────┘ │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │           REST API Endpoints (/api/*)                  │ │
-│  │  - Entry/Exit (ESP32 image upload)                     │ │
-│  │  - Payments                                             │ │
-│  │  - Reservations                                         │ │
-│  │  - Authentication                                       │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                           ↓↑
-                    PostgreSQL DB
-                           ↓↑
-              ┌────────────┴────────────┐
-              ↓                         ↓
-        ESP32 Câmeras              Web Interface
-       (Entry/Exit Gates)         (Dashboard/Admin)
-```
+### Infraestrutura & Dados
+- **PostgreSQL**: Base de dados relacional.
+- **Supabase**: Armazenamento de imagens (opcional, mas recomendado).
+- **Docker** (Opcional): Para containerização.
 
 ---
 
-## 📦 Instalação
+## 📦 Pré-requisitos
 
-### Pré-requisitos
-- Python 3.13 ou superior
-- PostgreSQL 12 ou superior
-- Git
-
-### 1. Clonar o Repositório
-```bash
-git clone <url-do-repositorio>
-cd AI_SE2
-```
-
-### 2. Criar Ambiente Virtual
-```bash
-# Windows
-python -m venv .venv
-.\.venv\Scripts\activate
-
-# Linux/Mac
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Instalar Dependências
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configurar Base de Dados
-```bash
-# Criar base de dados PostgreSQL
-createdb aiparking
-
-# Executar script SQL para criar tabelas
-psql -d aiparking -f tables.txt
-```
+Antes de começar, certifique-se de ter instalado:
+- **Python 3.10+** (Recomendado 3.13)
+- **Node.js 18+** e **npm**
+- **PostgreSQL 13+**
+- **Git**
 
 ---
 
-## ⚙️ Configuração
+## 🚀 Instalação
 
-### 1. Arquivo `.env`
-Crie um arquivo `.env` na raiz do projeto:
+### 1. Configuração do Backend
 
-```env
-SUPABASE_URL=
-SUPABASE_KEY=
-SUPABASE_BUCKET=nome do bucket
-SUPABASE_PUBLIC_BUCKET=false
-DATABASE_URL=postgresql://...
-PARKING_RATE_PER_HOUR=5.0
-AUTO_CREATE_SESSION_FROM_OCR=true  
-AUTO_CHARGE_ON_EXIT=true       
-AUTO_CHARGE_METHOD=auto_charge 
-PARKING_BILLING_MINUTE_STEP=1  
-PARKING_MINIMUM_FEE=0  
-```
+1.  **Clone o repositório:**
+    ```bash
+    git clone https://github.com/seu-usuario/AI_SE2.git
+    cd AI_SE2
+    ```
 
-### 2. Configurar Vagas
-Edite o arquivo `parking_spots.json` com as coordenadas das vagas ou use o py do mark_parking_spot.py:
+2.  **Crie e ative o ambiente virtual:**
+    ```bash
+    # Windows
+    python -m venv .venv
+    .\.venv\Scripts\activate
+
+    # Linux/Mac
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+
+3.  **Instale as dependências:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+    *Nota: Se tiver problemas com o `fast-alpr` ou `torch`, consulte a documentação oficial dessas bibliotecas para instalação específica do seu SO/Hardware (CUDA vs CPU).*
+
+### 2. Configuração do Frontend
+
+1.  **Navegue para a pasta do frontend:**
+    ```bash
+    cd frontend
+    ```
+
+2.  **Instale as dependências do Node:**
+    ```bash
+    npm install
+    ```
+
+### 3. Configuração da Base de Dados
+
+1.  **Crie a base de dados no PostgreSQL:**
+    ```sql
+    CREATE DATABASE aiparking;
+    ```
+
+2.  **Execute o script de criação das tabelas:**
+    Você pode usar o arquivo `tables.txt` (conteúdo SQL) para criar as tabelas necessárias (`parking_sessions`, `parking_payments`, `parking_web_users`, `parking_manual_reservations`).
+    ```bash
+    psql -d aiparking -f tables.txt
+    ```
+
+---
+
+## ⚙️ Configuração Detalhada
+
+Crie um arquivo `.env` na raiz do projeto (`AI_SE2/`) com as seguintes variáveis:
+
+| Variável | Descrição | Valor Padrão / Exemplo |
+| :--- | :--- | :--- |
+| **DATABASE** | | |
+| `DATABASE_URL` | URL de conexão PostgreSQL | `postgresql://user:pass@localhost:5432/aiparking` |
+| **SUPABASE (Opcional)** | Armazenamento de imagens | |
+| `SUPABASE_URL` | URL do projeto Supabase | `https://xyz.supabase.co` |
+| `SUPABASE_KEY` | Chave de API (Service Role/Anon) | `eyJ...` |
+| `SUPABASE_BUCKET` | Nome do bucket | `parking-images` |
+| `SUPABASE_PUBLIC_BUCKET` | Se o bucket é público | `false` |
+| **CONFIGURAÇÃO GERAL** | | |
+| `VIDEO_SOURCE` | Caminho do vídeo ou URL RTSP | `video.mp4` ou `rtsp://...` ou `0` (webcam) |
+| `SPOTS_FILE` | Arquivo JSON com coordenadas | `parking_spots.json` |
+| `MODEL_FILE` | Modelo treinado (.pth) | `spot_classifier.pth` |
+| `DEVICE` | Dispositivo de inferência | `auto` (escolhe cuda se disponível), `cpu`, `cuda` |
+| `SPOT_THRESHOLD` | Confiança mínima para ocupação | `0.7` |
+| `PARKING_RATE_PER_HOUR` | Custo por hora (€) | `1.50` |
+| `SESSION_SECRET` | Chave para sessões HTTP | `dev-secret-change-me` |
+| **ALPR (Matrículas)** | | |
+| `ENABLE_ALPR` | Ativar reconhecimento? | `true` |
+| `ALPR_WORKERS` | Threads para ALPR | `1` |
+| `ALPR_DETECTOR_MODEL` | Modelo de detecção | `yolo-v9-s-608-license-plate-end2end` |
+| `ALPR_OCR_MODEL` | Modelo de OCR | `cct-s-v1-global-model` |
+
+### Configuração das Vagas (`parking_spots.json`)
+Este arquivo define as coordenadas dos polígonos de cada vaga. Pode ser gerado usando o script auxiliar `mark_parking_spots.py`.
 
 ```json
 {
-  "reference_size": [1920, 1080],
+  "reference_size": {"width": 1920, "height": 1080},
   "spots": [
     {
       "name": "A1",
-      "points": [[100, 200], [300, 200], [300, 400], [100, 400]],
+      "points": [{"x": 100, "y": 200}, ...],
       "reserved": false,
-      "authorized": []
-    },
-    {
-      "name": "B1",
-      "points": [[350, 200], [550, 200], [550, 400], [350, 400]],
-      "reserved": true,
-      "authorized": ["AA-00-BB", "CD-12-EF"]
+      "authorized_plates": []
     }
   ]
 }
@@ -191,362 +210,89 @@ Edite o arquivo `parking_spots.json` com as coordenadas das vagas ou use o py do
 
 ---
 
-## 🚀 Execução
+## ▶️ Execução
 
-### Iniciar o Servidor
+Recomenda-se abrir dois terminais:
+
+### Terminal 1: Backend
 ```bash
-# Em desenvolvimento (com reload automático)
+# Na raiz do projeto (com venv ativado)
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Em produção
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
+*O servidor iniciará em http://localhost:8000. A documentação Swagger estará em /docs.*
 
-### Acessar Interfaces
-- **Swagger UI**: http://localhost:8000/docs
-- **Dashboard**: http://localhost:8000/
-- **Live Monitor**: http://localhost:8000/live
-- **Reservas**: http://localhost:8000/reservations
-- **Admin**: http://localhost:8000/admin
+### Terminal 2: Frontend
+```bash
+# Na pasta frontend/
+npm run dev
+```
+*A aplicação web estará disponível (geralmente) em http://localhost:5173.*
 
 ---
 
-## 📡 API Endpoints
+## 📡 Documentação da API
 
-### Monitorização
+Principais endpoints disponíveis:
 
-#### `GET /parking`
-Retorna estado atual de todas as vagas.
+### 🟢 Monitorização
+- `GET /parking`: Estado atual de todas as vagas (JSON).
+- `GET /video_feed`: Stream MJPEG do vídeo com anotações em tempo real.
+- `WS /ws`: WebSocket para eventos de mudança de estado.
 
-**Resposta:**
-```json
-{
-  "A1": {
-    "occupied": true,
-    "prob": 0.95,
-    "reserved": false,
-    "plate": "AA-12-BB",
-    "violation": false
-  },
-  "A2": {
-    "occupied": false,
-    "prob": 0.12,
-    "reserved": false
-  }
-}
-```
+### 🚗 Entrada e Saída (Integração ESP32)
+- `POST /api/entry`: Regista entrada. Recebe `camera_id` e `image` (file). Retorna `session_id`.
+- `POST /api/exit`: Regista saída. Recebe `camera_id` e `image` (file). Calcula valor a pagar.
 
-#### `GET /video_feed`
-Stream MJPEG do vídeo anotado.
+### 📅 Reservas
+- `GET /api/reservations`: Lista reservas ativas.
+- `POST /api/reservations`: Cria nova reserva (Requer Auth).
+- `DELETE /api/reservations/{spot}`: Cancela reserva.
 
-#### `GET /plate_events`
-Últimas matrículas detectadas.
-
-#### `WS /ws`
-WebSocket para atualizações em tempo real.
+### 💰 Pagamentos
+- `POST /api/payments`: Regista pagamento de uma sessão.
+- `GET /api/sessions`: Histórico de sessões.
 
 ---
 
-### Entrada/Saída (ESP32)
+## 📟 Integração IoT (ESP32)
 
-#### `POST /api/entry`
-Registra entrada de veículo com foto da matrícula.
+O sistema espera que os dispositivos IoT (câmeras nos portões) enviem requisições HTTP POST `multipart/form-data` para os endpoints de entrada e saída.
 
-**Requisição:**
-```
-Content-Type: multipart/form-data
+**Exemplo de fluxo:**
+1. Carro aproxima-se do portão.
+2. ESP32 tira foto.
+3. ESP32 envia POST para `http://SERVER_IP:8000/api/entry` com a imagem.
+4. Servidor processa ALPR, cria sessão e retorna sucesso.
+5. ESP32 abre a cancela.
 
-camera_id: "gate-entrada"
-image: <arquivo JPEG>
-```
-
-**Resposta:**
-```json
-{
-  "session_id": 123,
-  "entry_time": "2025-11-26T20:30:15.123456+00:00",
-  "plate": "AA-12-BB",
-  "camera_id": "gate-entrada"
-}
-
-```
-
-#### `POST /api/exit`
-Registra saída de veículo e calcula valor devido.
-
-**Requisição:**
-```
-Content-Type: multipart/form-data
-
-camera_id: "gate-saida"
-image: <arquivo JPEG>
-```
-
-**Resposta:**
-```json
-{
-  "session_id": 123,
-  "plate": "AA-12-BB",
-  "entry_time": "2025-11-26T20:30:15+00:00",
-  "exit_time": "2025-11-26T21:15:30+00:00",
-  "amount_due": 0.68,
-  "camera_id": "gate-saida"
-}
-```
+Consulte o arquivo `ESP32_API_GUIDE.md` (se disponível) para código exemplo em C++/Arduino.
 
 ---
 
-### Pagamentos
+## 📂 Estrutura do Projeto
 
-#### `POST /api/payments`
-Registra pagamento de uma sessão.
-
-**Requisição:**
-```json
-{
-  "session_id": 123,
-  "amount": 0.68,
-  "method": "card"
-}
 ```
-
-**Métodos aceitos:** `card`, `cash`, `mbway`
-
-**Resposta:**
-```json
-{
-  "session_id": 123,
-  "amount_paid": 0.68,
-  "amount_due": 0.68,
-  "status": "paid",
-  "payment_method": "card",
-  "payment_amount": 0.68
-}
+AI_SE2/
+├── frontend/               # Código fonte React/Vite
+│   ├── src/
+│   ├── package.json
+│   └── ...
+├── main.py                 # Aplicação Principal (FastAPI)
+├── alpr.py                 # Módulo wrapper para ALPR (se aplicável)
+├── spot_classifier.py      # Definição do modelo PyTorch (CNN)
+├── supabaseStorage.py      # Serviço de upload para Supabase
+├── requirements.txt        # Dependências Python
+├── parking_spots.json      # Configuração das vagas
+├── tables.txt              # Schema da Base de Dados
+├── .env                    # Variáveis de ambiente
+└── ...
 ```
-
----
-
-### Reservas
-
-#### `GET /api/reservations`
-Lista todas as reservas ativas.
-
-#### `POST /api/reservations`
-Cria uma nova reserva (requer autenticação).
-
-**Requisição:**
-```json
-{
-  "spot": "A1",
-  "hours": 2
-}
-```
-
-#### `DELETE /api/reservations/{spot}`
-Cancela uma reserva.
-
----
-
-### Autenticação
-
-#### `POST /api/auth/register`
-Regista novo utilizador.
-
-**Requisição:**
-```json
-{
-  "name": "João Silva",
-  "plate": "AA-12-BB"
-}
-```
-
-#### `POST /api/auth/login`
-Autentica utilizador.
-
-#### `POST /api/auth/logout`
-Termina sessão.
-
-#### `GET /api/auth/me`
-Retorna dados do utilizador autenticado.
-
----
-
-## 📱 Integração ESP32
-
-### Hardware Necessário
-- ESP32-CAM ou ESP32 + Módulo de Câmera
-- Sensor de proximidade (opcional)
-- LED de status
-
-### Exemplo de Código (Arduino)
-```cpp
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include "esp_camera.h"
-
-const char* ssid = "SEU_WIFI";
-const char* password = "SUA_SENHA";
-const char* serverUrl = "http://192.168.1.100:8000/api/entry";
-const char* cameraId = "gate-entrada";
-
-void setup() {
-  // Inicializar câmera
-  camera_config_t config;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_VGA;
-  config.jpeg_quality = 12;
-  
-  esp_camera_init(&config);
-  
-  // Conectar WiFi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-  }
-}
-
-void sendPlateImage() {
-  camera_fb_t* fb = esp_camera_fb_get();
-  
-  if (!fb) return;
-  
-  HTTPClient http;
-  http.begin(serverUrl);
-  
-  String boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
-  String contentType = "multipart/form-data; boundary=" + boundary;
-  
-  String body = "--" + boundary + "\r\n";
-  body += "Content-Disposition: form-data; name=\"camera_id\"\r\n\r\n";
-  body += cameraId;
-  body += "\r\n--" + boundary + "\r\n";
-  body += "Content-Disposition: form-data; name=\"image\"; filename=\"plate.jpg\"\r\n";
-  body += "Content-Type: image/jpeg\r\n\r\n";
-  
-  uint8_t* buffer = (uint8_t*)malloc(body.length() + fb->len + 100);
-  memcpy(buffer, body.c_str(), body.length());
-  memcpy(buffer + body.length(), fb->buf, fb->len);
-  
-  String footer = "\r\n--" + boundary + "--\r\n";
-  memcpy(buffer + body.length() + fb->len, footer.c_str(), footer.length());
-  
-  http.addHeader("Content-Type", contentType);
-  int httpCode = http.POST(buffer, body.length() + fb->len + footer.length());
-  
-  if (httpCode == 200) {
-    String response = http.getString();
-    // Processar resposta
-  }
-  
-  free(buffer);
-  esp_camera_fb_return(fb);
-  http.end();
-}
-```
-
-**Ver documentação completa:** [ESP32_API_GUIDE.md](ESP32_API_GUIDE.md)
-
----
-
-## 🗄️ Base de Dados
-
-### Tabelas Principais
-
-#### `parking_sessions`
-Regista todas as sessões de estacionamento.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | SERIAL | ID único da sessão |
-| plate | VARCHAR(32) | Matrícula do veículo |
-| camera_id | VARCHAR(64) | ID da câmera de entrada |
-| entry_time | TIMESTAMPTZ | Hora de entrada |
-| exit_time | TIMESTAMPTZ | Hora de saída |
-| amount_due | DECIMAL | Valor a pagar |
-| amount_paid | DECIMAL | Valor pago |
-| status | VARCHAR(32) | Estado (open/paid/cancelled) |
-
-#### `parking_payments`
-Regista todos os pagamentos.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | SERIAL | ID único do pagamento |
-| session_id | INT | Referência à sessão |
-| amount | DECIMAL | Valor pago |
-| method | VARCHAR(32) | Método de pagamento |
-| created_at | TIMESTAMPTZ | Data do pagamento |
-
-#### `parking_web_users`
-Utilizadores registados na plataforma web.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| full_name | VARCHAR(80) | Nome completo |
-| plate | VARCHAR(32) | Matrícula (PK) |
-| plate_norm | VARCHAR(32) | Matrícula normalizada |
-
-#### `parking_manual_reservations`
-Reservas manuais de vagas.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| spot | VARCHAR(32) | Nome da vaga (PK) |
-| plate | VARCHAR(32) | Matrícula |
-| reserved_by | VARCHAR(80) | Nome do reservante |
-| reserved_until | TIMESTAMPTZ | Validade da reserva |
-
----
-
-## 🖥 Interface Web
-
-### Dashboard Principal
-- Visualização em tempo real do estado das vagas
-- Mapa visual do parque de estacionamento
-- Estatísticas de ocupação
-
-### Gestão de Reservas
-- Login seguro com nome + matrícula
-- Reserva de vagas disponíveis
-- Visualização das suas reservas ativas
-- Cancelamento de reservas
-
-### Painel Admin
-- Stream de vídeo anotado em tempo real
-- Lista de todas as vagas com estado
-- Histórico de detecções de matrículas
-- Gestão de reservas
 
 ---
 
 ## 🔧 Troubleshooting
 
-### Problema: "DATABASE_URL não configurada"
-**Solução:** Certifique-se de que o arquivo `.env` existe e contém `DATABASE_URL=postgresql://...`
-
-### Problema: "Base de dados indisponível" (503)
-**Soluções:**
-1. Verifique se o PostgreSQL está a correr
-2. Teste a conexão: `python test_db_connection.py`
-3. Verifique as credenciais no `.env`
-
-### Problema: ALPR não detecta matrículas
-**Soluções:**
-1. Certifique-se de que a imagem está bem iluminada
-2. A matrícula deve estar em foco
-3. Aumente a resolução da imagem (mínimo 640x480)
-4. Verifique se `ENABLE_ALPR=true` no `.env`
-
-### Problema: CNN não deteta ocupação correta
-**Soluções:**
-1. Ajuste `SPOT_THRESHOLD` no `.env` (padrão: 0.7)
-2. Retreine o modelo com mais exemplos
-3. Verifique se as coordenadas em `parking_spots.json` estão corretas
-
-### Problema: Vídeo não abre
-**Soluções:**
-1. Verifique o caminho em `VIDEO_SOURCE`
-2. Para RTSP, teste: `ffplay rtsp://camera-ip:554/stream`
-3. Para webcam, tente `VIDEO_SOURCE=0`
-
----
+- **Erro `ImportError: fast_alpr`**: Certifique-se de que instalou o `fast-alpr` corretamente. Em Windows, pode requerer passos adicionais ou uso de WSL2 se as bibliotecas C++ compiladas não estiverem disponíveis.
+- **Erro de Conexão DB**: Verifique se o serviço PostgreSQL está rodando e se a `DATABASE_URL` no `.env` está correta.
+- **Vídeo não abre**: Verifique o caminho em `VIDEO_SOURCE`. Se usar webcam, tente index `0` ou `1`. Se usar arquivo, garanta que o caminho é absoluto ou relativo à raiz.
+- **Frontend não conecta ao Backend**: Verifique se o frontend está configurado para apontar para `localhost:8000` (proxy no `vite.config.js` ou variável de ambiente VITE).
