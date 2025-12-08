@@ -1,104 +1,116 @@
-.occupancy-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: var(--spacing-4);
-    margin-top: var(--spacing-6);
+.occupancy-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
 }
 
-.spot-card {
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-surface-hover);
-    border-radius: var(--border-radius-lg);
-    padding: var(--spacing-3);
-    text-align: center;
-    position: relative;
-    transition: var(--transition-base);
-    display: flex;
-    flex-direction: column;
+.occupancy-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+}
+
+@media (min-width: 500px) {
+  .occupancy-header {
+    flex-direction: row;
     align-items: center;
-    justify-content: center;
-    min-height: 100px;
-    box-shadow: var(--shadow-sm);
+    justify-content: space-between;
+  }
 }
 
-.spot-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--color-surface-active);
+.occupancy-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin: 0;
 }
 
-.spot-id {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text-primary);
-    margin-bottom: var(--spacing-1);
+.occupancy-stats {
+  display: flex;
+  gap: var(--spacing-4);
 }
 
-.spot-status {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--spacing-2);
+.stat {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
-.spot-badge {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: var(--border-radius-full);
-    font-weight: var(--font-weight-bold);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+.stat strong {
+  color: var(--color-text-primary);
 }
 
-/* Status Variants */
-.spot-card.free {
-    border-top: 4px solid var(--color-success);
+.stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--border-radius-full);
 }
 
-.spot-card.free .spot-id {
-    color: var(--color-success);
+.stat-dot.free {
+  background-color: var(--color-spot-available);
 }
 
-.spot-card.occupied {
-    border-top: 4px solid var(--color-danger);
-    background-color: rgba(244, 63, 94, 0.05);
+.stat-dot.occupied {
+  background-color: var(--color-spot-occupied);
 }
 
-.spot-card.occupied .spot-id {
-    color: var(--color-danger);
+.loading-text,
+.error-text {
+  font-size: var(--font-size-sm);
+  margin: 0;
 }
 
-.spot-card.reserved {
-    border-color: var(--color-warning);
-    box-shadow: 0 0 0 1px var(--color-warning);
+.loading-text {
+  color: var(--color-text-muted);
 }
 
-.spot-card.violation {
-    border-color: var(--color-danger);
-    background-color: rgba(244, 63, 94, 0.1);
-    animation: pulse 2s infinite;
+.error-text {
+  color: var(--color-danger);
 }
 
-@keyframes pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4);
-    }
-
-    70% {
-        box-shadow: 0 0 0 6px rgba(244, 63, 94, 0);
-    }
-
-    100% {
-        box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
-    }
+/* Parking Lot Visual */
+.parking-lot {
+  margin-top: var(--spacing-4);
+  background-color: var(--color-surface-hover);
+  border-radius: var(--border-radius-lg);
+  padding: var(--spacing-4);
+  position: relative;
 }
 
-.badge-reserved {
-    background-color: var(--color-warning);
-    color: #fff;
+.parking-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-4);
+  position: relative;
+  z-index: 1;
 }
 
-.badge-violation {
-    background-color: var(--color-danger);
-    color: white;
+@media (min-width: 500px) {
+  .parking-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 769px) {
+  .parking-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Parking spot lines */
+.parking-grid > * {
+  position: relative;
+}
+
+.parking-grid > *::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background-color: rgba(0, 0, 0, 0.1);
 }

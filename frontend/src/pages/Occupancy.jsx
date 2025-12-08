@@ -1,13 +1,23 @@
-// Occupancy component - shows all parking spots status
+// Occupancy component - Redesigned with visual car grid
 import React from 'react';
 import { api } from '../api.js';
 import Card from '../components/common/Card';
+import ZoneFilter from '../components/common/ZoneFilter';
+import SpotCard from '../components/common/SpotCard';
 import './Occupancy.css';
+
+const ZONES = [
+    { id: 'all', label: 'Todas' },
+    { id: 'A', label: 'Zona A' },
+    { id: 'B', label: 'Zona B' },
+    { id: 'C', label: 'Zona C' },
+];
 
 export default function Occupancy() {
     const [spots, setSpots] = React.useState({});
     const [error, setError] = React.useState('');
     const [loading, setLoading] = React.useState(true);
+    const [activeZone, setActiveZone] = React.useState('all');
 
     React.useEffect(() => {
         loadSpots();
@@ -27,13 +37,28 @@ export default function Occupancy() {
         }
     }
 
+    // Filter spots by zone
+    const getFilteredSpots = () => {
+        const spotNames = Object.keys(spots);
+        if (activeZone === 'all') return spotNames;
+        return spotNames.filter(name => {
+            const num = parseInt(name.replace(/\D/g, '')) || 0;
+            if (activeZone === 'A') return num <= 3;
+            if (activeZone === 'B') return num > 3 && num <= 6;
+            if (activeZone === 'C') return num > 6;
+            return true;
+        });
+    };
+
+    const filteredSpots = getFilteredSpots();
+    const occupied = filteredSpots.filter(name => spots[name]?.occupied).length;
+    const free = filteredSpots.length - occupied;
+
     if (loading) {
         return (
             <Card>
-                <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-2)' }}>
-                    Ocupação do Parque
-                </h2>
-                <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>A carregar...</p>
+                <h2 className="occupancy-title">Ocupação do Parque</h2>
+                <p className="loading-text">A carregar...</p>
             </Card>
         );
     }
@@ -41,56 +66,48 @@ export default function Occupancy() {
     if (error) {
         return (
             <Card>
-                <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-2)' }}>
-                    Ocupação do Parque
-                </h2>
-                <p style={{ color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)' }}>{error}</p>
+                <h2 className="occupancy-title">Ocupação do Parque</h2>
+                <p className="error-text">{error}</p>
             </Card>
         );
     }
 
-    const spotNames = Object.keys(spots);
-    const occupied = spotNames.filter(name => spots[name].occupied).length;
-    const free = spotNames.length - occupied;
-
     return (
-        <Card>
-            <div className="flex justify-between items-center" style={{ marginBottom: 'var(--spacing-6)' }}>
-                <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold' }}>
-                    Ocupação do Parque
-                </h2>
-                <div className="flex gap-4 text-sm font-medium">
-                    <span style={{ color: 'var(--color-text-secondary)' }}>Total: <strong style={{ color: 'var(--color-text-primary)' }}>{spotNames.length}</strong></span>
-                    <span style={{ color: 'var(--color-success)' }}>Livres: <strong>{free}</strong></span>
-                    <span style={{ color: 'var(--color-danger)' }}>Ocupados: <strong>{occupied}</strong></span>
+        <div className="occupancy-page">
+            <Card>
+                <div className="occupancy-header">
+                    <h2 className="occupancy-title">Ocupação do Parque</h2>
+                    <div className="occupancy-stats">
+                        <span className="stat stat-free">
+                            <span className="stat-dot free"></span>
+                            Livres: <strong>{free}</strong>
+                        </span>
+                        <span className="stat stat-occupied">
+                            <span className="stat-dot occupied"></span>
+                            Ocupados: <strong>{occupied}</strong>
+                        </span>
+                    </div>
                 </div>
-            </div>
 
-            <div className="occupancy-grid">
-                {spotNames.map((name) => {
-                    const spot = spots[name];
-                    const isOccupied = spot.occupied;
-                    const isReserved = spot.reserved;
-                    const isViolation = spot.violation;
-
-                    let statusClass = 'free';
-                    if (isOccupied) statusClass = 'occupied';
-                    if (isReserved) statusClass += ' reserved';
-                    if (isViolation) statusClass += ' violation';
-
-                    return (
-                        <div key={name} className={`spot-card ${statusClass}`}>
-                            <div className="spot-id">{name}</div>
-                            <div className="spot-status">
-                                {isOccupied ? 'Ocupado' : 'Livre'}
-                            </div>
-
-                            {isReserved && <div className="spot-badge badge-reserved">Reservado</div>}
-                            {isViolation && <div className="spot-badge badge-violation">Violação</div>}
-                        </div>
-                    );
-                })}
-            </div>
-        </Card>
+                <div className="parking-lot">
+                    {/* Road markings effect */}
+                    <div className="parking-grid">
+                        {filteredSpots.map((name) => {
+                            const spot = spots[name];
+                            const status = spot.occupied ? 'occupied' : 
+                                          spot.reserved ? 'reserved' : 'available';
+                            return (
+                                <SpotCard
+                                    key={name}
+                                    spotId={name}
+                                    status={status}
+                                    reserved={spot.reserved}
+                                />
+                            );
+                        })}
+                    </div>
+                </div>
+            </Card>
+        </div>
     );
 }

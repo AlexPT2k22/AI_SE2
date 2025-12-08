@@ -1,13 +1,19 @@
 .card {
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-surface-hover);
-    border-radius: var(--border-radius-xl);
-    padding: var(--spacing-6);
-    color: var(--color-text-primary);
-    box-shadow: var(--shadow-lg);
-    transition: var(--transition-base);
+  background-color: var(--color-surface);
+  border-radius: var(--border-radius-xl);
+  padding: var(--spacing-5);
+  box-shadow: var(--shadow-md);
+  transition: var(--transition-base);
 }
 
 .card:hover {
-    border-color: var(--color-surface-active);
+  box-shadow: var(--shadow-lg);
+}
+
+.card-compact {
+  padding: var(--spacing-3);
+}
+
+.card-flat {
+  box-shadow: none;
 }
