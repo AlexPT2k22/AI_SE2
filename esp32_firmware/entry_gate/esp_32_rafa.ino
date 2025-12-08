@@ -7,6 +7,8 @@
 // =================== CONFIGURAÇÕES ===================
 const char *ssid = "POCO X3 Pro";
 const char *password = "123456789rafael";
+//const char *ssid = "MEO-80A450";
+//const char *password = "29e5854ca7";
 
 // Configurações do Servidor API
 const char* serverHost = "10.254.177.133";
@@ -14,20 +16,18 @@ const int serverPort = 8000;
 const char* serverPath = "/api/entry";
 const char* cameraId = "gate-entrada";
 
-#define TRIGGER_PIN 13 
+#define TRIGGER_PIN 14
 #define SERVO_PIN 12        // Servo da barreira
 Servo servoBarreira;
-#define TRIG_PIN 13         // HC-SR04 Trigger
-#define ECHO_PIN 16         // HC-SR04 Echo
+#define ECHO_PIN 15         // HC-SR04 Echo
 // =================== CONTROLE DE ESTADO ===================
 volatile bool systemBusy = false;  // Previne múltiplos triggers simultâneos
 
-#define LED_RED_PIN 2     // LED RGB - Vermelho
-#define LED_GREEN_PIN 15    // LED RGB - Verde
-#define LED_BLUE_PIN 2      // LED RGB - Azul (ajuste conforme seu pino)
+#define LED_RED_PIN 2  // LED RGB - Vermelho
+#define LED_GREEN_PIN 13     // LED RGB - Verde
 
 // =================== CONFIGURAÇÕES DO SENSOR ===================
-#define DETECTION_DISTANCE 100  // Distância em cm para detectar veículo
+#define DETECTION_DISTANCE 8  // Distância em cm para detectar veículo
 #define DEBOUNCE_DELAY 5000     // Delay entre detecções (ms)
 
 
@@ -54,6 +54,15 @@ httpd_handle_t camera_httpd = NULL;
 // Declaração antecipada
 void captureAndSend();
 long measureDistance(); 
+
+void flashBothLeds(int times, int delayMs){
+  for (int i = 0; i < times; i++) {
+    setLeds(true, true);  
+    delay(delayMs);
+    setLeds(false, false); 
+    delay(delayMs);
+  }
+}
 
 // Handler simples - apenas captura uma foto e salva
 static esp_err_t capture_handler(httpd_req_t *req) {
@@ -127,13 +136,9 @@ static esp_err_t index_handler(httpd_req_t *req) {
 }
 
 // Função auxiliar para controlar o LED RGB
-void setRGBColor(bool red, bool green, bool blue) {
-  //digitalWrite(LED_RED_PIN, red ? HIGH : LOW);
-  //digitalWrite(LED_GREEN_PIN, green ? HIGH : LOW);
-  //digitalWrite(LED_BLUE_PIN, blue ? HIGH : LOW);
-    digitalWrite(LED_RED_PIN, red ? LOW : HIGH);
-    digitalWrite(LED_GREEN_PIN, green ? LOW : HIGH);
-    //digitalWrite(LED_BLUE_PIN, blue ? LOW : HIGH);
+void setLeds(bool red, bool green) {
+  digitalWrite(LED_RED_PIN, red ? HIGH : LOW);
+  digitalWrite(LED_GREEN_PIN, green ? HIGH : LOW);
   }
 
 
@@ -211,15 +216,17 @@ void setup() {
   servoBarreira.attach(SERVO_PIN);
   servoBarreira.write(0);
 
-  // Configurar LEDs RGB
+  //Ultra sons
+  pinMode(TRIGGER_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  // Configurar LEDs 
   pinMode(LED_GREEN_PIN, OUTPUT);
   pinMode(LED_RED_PIN, OUTPUT);
-  pinMode(LED_BLUE_PIN, OUTPUT);
-  
-  // Desliga todos os canais
-  digitalWrite(LED_GREEN_PIN, LOW);
-  digitalWrite(LED_RED_PIN, LOW);
-  digitalWrite(LED_BLUE_PIN, LOW);
+  setLeds(true, false);
+
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
 
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -268,10 +275,7 @@ void setup() {
 
   // Corrigir orientação da imagem
   sensor_t * s = esp_camera_sensor_get();
-  // if (s != NULL) {
-  //   s->set_vflip(s, 1);  // Flip vertical
-  //   s->set_hmirror(s, 1); // Espelho horizontal
-  // }
+
   Serial.println("Camera inicializada!");
 
   WiFi.begin(ssid, password);
@@ -285,7 +289,6 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   startCameraServer();
-  pinMode(TRIGGER_PIN, INPUT_PULLUP);
   
   Serial.println("=== PRONTO! ===");
 }
@@ -298,9 +301,12 @@ void loop() {
   }
 
   long distance = measureDistance();
-
+  static unsigned long lastTriggerTime = 0;
+  unsigned long now = millis();
   // Detecta veículo se distância for menor que o threshold
-  if (distance > 0 && distance < DETECTION_DISTANCE) {
+  if (distance > 0 && distance <= DETECTION_DISTANCE && (now - lastTriggerTime) > DEBOUNCE_DELAY) {
+    lastTriggerTime = now;
+
     Serial.print("Veículo detectado a ");
     Serial.print(distance);
     Serial.println(" cm");
@@ -309,15 +315,15 @@ void loop() {
     captureAndSend();
     
     // Debounce - aguarda antes de nova detecção
-    delay(DEBOUNCE_DELAY);
+    //delay(DEBOUNCE_DELAY);
   }
 
-
-  if (digitalRead(TRIGGER_PIN) == LOW) {
-    Serial.println("Gatilho fisico!");
-    captureAndSend();
-    delay(5000);
-  }
+//rEMOVI AQUI ISTO!!!!!!
+  // if (digitalRead(TRIGGER_PIN) == LOW) {
+  //   Serial.println("Gatilho fisico!");
+  //   captureAndSend();
+  //   delay(5000);
+  // }
   delay(100);
 }
 
@@ -329,22 +335,19 @@ void captureAndSend() {
   
   // Liga flash para melhor qualidade de imagem
   digitalWrite(4, HIGH);
-  delay(100);
+  delay(1000);
   
   camera_fb_t * fb = esp_camera_fb_get();
   
   // Desliga flash
   digitalWrite(4, LOW);
-  
-  if(!fb) {
-    Serial.println("❌ Falha na captura");
-    digitalWrite(LED_RED_PIN, HIGH);
-    delay(1000);
-    digitalWrite(LED_RED_PIN, LOW);
-    systemBusy = false;  // Libera sistema
+
+  if (!fb) {
+    Serial.println ("Erro: esp_camera_fb_get falhou!");
+    systemBusy = false;
     return;
   }
-
+  
   Serial.printf("📸 Foto capturada: %u bytes\n", fb->len);
 
   WiFiClient client;
@@ -399,7 +402,7 @@ void captureAndSend() {
             if (httpStatusCode == 200 && !barrierOpened) {
               Serial.println("Status 200 - ABRINDO BARREIRA IMEDIATAMENTE");
                 // Acesso autorizado - LED Verde
-                setRGBColor(false, true, false);
+                setLeds(false, true);
                 
                 servoBarreira.write(90);
                 Serial.println("🚧 Barreira aberta (90°)");
@@ -410,13 +413,10 @@ void captureAndSend() {
               // Erro - LED vermelho imediatamente
               Serial.println("Status erro - LED VERMELHO");
                 // Acesso negado - LED Vermelho
-                setRGBColor(true, false, false);
+                setLeds(true, false);
             }
           }
         }
-        
-        // Sistema pronto - LED desligado
-        setRGBColor(false, false, false);
         // Separador entre headers e body
         if (line == "\r") {
           headersPassed = true;
@@ -479,6 +479,7 @@ void captureAndSend() {
       
       // Fecha servo (0 graus)
       servoBarreira.write(0);
+      setLeds(true, false);
       
       Serial.println("🚧 Barreira fechada");
       
@@ -492,23 +493,40 @@ void captureAndSend() {
       // Erro (400, 404, 500, etc) - LED já foi aceso
       Serial.println("ERRO - acesso negado");
       
+      bool isDuplicate = false;
+
       // Extrair mensagem de erro se existir
       if (responseBody.indexOf("\"detail\"") > 0) {
-        int detailStart = responseBody.indexOf("\"detail\"");
-        int colonPos = responseBody.indexOf(':', detailStart);
-        int valueStart = responseBody.indexOf('"', colonPos);
-        int valueEnd = responseBody.indexOf('"', valueStart + 1);
-        
-        if (valueStart > 0 && valueEnd > valueStart) {
-          String errorMsg = responseBody.substring(valueStart + 1, valueEnd);
-          Serial.print("   Erro: ");
-          Serial.println(errorMsg);
-        }
+          int detailStart = responseBody.indexOf("\"detail\"");
+          int colonPos = responseBody.indexOf(':', detailStart);
+          int valueStart = responseBody.indexOf('"', colonPos);
+          int valueEnd = responseBody.indexOf('"', valueStart + 1);
+
+          if (valueStart > 0 && valueEnd > valueStart) {
+              String errorMsg = responseBody.substring(valueStart + 1, valueEnd);
+              Serial.print("   Erro: ");
+              Serial.println(errorMsg);
+
+              // Detectar matrícula duplicada
+              if (errorMsg.indexOf("registo") >= 0 ||
+                  errorMsg.indexOf("duplic") >= 0 ||
+                  errorMsg.indexOf("já") >= 0) {
+
+                  isDuplicate = true;
+              }
+          }
       }
-      
+
+      // Agora sim: escolher o tipo de pisca
+      if (isDuplicate) {
+          Serial.println("Matrícula já registada - pisca 5 vezes");
+          flashBothLeds(5, 150);
+      } else {
+          Serial.println("Acesso negado - pisca 3 vezes");
+          flashBothLeds(3, 150);
+      }
       // Mantém LED vermelho por 3 segundos
-      delay(3000);
-      digitalWrite(LED_RED_PIN, LOW);
+      setLeds(true, false);
       
       // Libera sistema para próxima detecção
       systemBusy = false;
@@ -516,10 +534,6 @@ void captureAndSend() {
     } else {
       // Sem status válido ou timeout
       Serial.println("⚠️ Resposta inválida ou timeout");
-    //   digitalWrite(LED_RED_PIN, HIGH);
-    //   digitalWrite(LED_GREEN_PIN, LOW);
-    //   delay(1000);
-    //   digitalWrite(LED_RED_PIN, LOW);
       
       // Libera sistema
       systemBusy = false;
@@ -528,11 +542,6 @@ void captureAndSend() {
     client.stop();
   } else {
     Serial.println("Falha ao conectar na API");
-    // digitalWrite(LED_RED_PIN, HIGH);
-    // delay(1000);
-    // digitalWrite(LED_RED_PIN, LOW);
-    
-    // Libera sistema para próxima detecção
     systemBusy = false;
   }
   
