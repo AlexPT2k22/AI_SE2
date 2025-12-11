@@ -29,10 +29,13 @@ try:
 except ImportError:  # pragma: no cover - fallback when package missing
     ALPR = None
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, UploadFile, File, Form, Header
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
+import jwt
+import hashlib
 
 from spot_classifier import SpotClassifier
 from esp32_capture_wrapper import get_video_capture
@@ -96,6 +99,20 @@ if ENABLE_ALPR and ALPR is None:
 # ------------------------------------------------------------
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, max_age=7 * 24 * 3600)
+
+# CORS for React Native mobile app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for mobile app
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# JWT Configuration for mobile authentication
+JWT_SECRET = os.getenv("JWT_SECRET", SESSION_SECRET)  # Use same secret if not specified
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
 
 # Estado global das vagas
 g_spot_status: Dict[str, Any] = {}
@@ -872,6 +889,10 @@ def parking_monitor_loop():
 
                     history[name].append(1 if occ_raw else 0)
                     occ_final = (sum(history[name]) > len(history[name]) / 2)
+                    
+                    # Check for debug override
+                    if name in g_debug_spot_overrides:
+                        occ_final = g_debug_spot_overrides[name]
 
                     spot_meta = spot_lookup.get(name, {})
                     reservation_info = reservations_snapshot.get(name)
@@ -969,9 +990,45 @@ def plate_events():
     return JSONResponse(events)
 
 
+@app.get("/api/config")
+async def get_config():
+    """Return parking configuration for mobile app."""
+    return {
+        "parking_rate_per_hour": PARKING_RATE_PER_HOUR,
+        "currency": "EUR",
+    }
+
+
+# Debug endpoint to manually override spot status for testing
+g_debug_spot_overrides: Dict[str, bool] = {}  # spot_name -> occupied (True/False)
+
+class DebugSpotPayload(BaseModel):
+    spot: str = Field(..., min_length=1)
+    occupied: bool
+
+@app.post("/api/debug/spot")
+async def debug_set_spot(payload: DebugSpotPayload):
+    """Debug endpoint to force a spot to be occupied or free for testing."""
+    g_debug_spot_overrides[payload.spot] = payload.occupied
+    status = "ocupado" if payload.occupied else "livre"
+    return {"message": f"Spot {payload.spot} definido como {status}", "spot": payload.spot, "occupied": payload.occupied}
+
+@app.delete("/api/debug/spot/{spot_name}")
+async def debug_reset_spot(spot_name: str):
+    """Reset a spot to use CNN detection instead of manual override."""
+    if spot_name in g_debug_spot_overrides:
+        del g_debug_spot_overrides[spot_name]
+    return {"message": f"Spot {spot_name} resetado para deteção automática"}
+
+@app.get("/api/debug/spots")
+async def debug_list_overrides():
+    """List all manual spot overrides."""
+    return {"overrides": g_debug_spot_overrides}
+
+
 class ReservationPayload(BaseModel):
     spot: str = Field(..., min_length=1)
-    # Reserva expira em 12 horas se não for usada (para aplicar multa)
+    duration_hours: Optional[int] = Field(default=12, ge=1, le=24)  # Default 12h, max 24h
 
 
 class AuthPayload(BaseModel):
@@ -1155,6 +1212,334 @@ def auth_me(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Nao autenticado.")
     return user
+
+
+# ------------------------------------------------------------
+# JWT HELPER FUNCTIONS (Mobile Authentication)
+# ------------------------------------------------------------
+def generate_jwt_token(user_data: Dict[str, Any]) -> str:
+    """Generate JWT token for mobile app authentication."""
+    payload = {
+        "name": user_data["name"],
+        "plate": user_data["plate"],
+        "plate_norm": user_data["plate_norm"],
+        "exp": datetime.now(tz=timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS),
+        "iat": datetime.now(tz=timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def verify_jwt_token(token: str) -> Optional[Dict[str, Any]]:
+    """Verify JWT token and return user data."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return {
+            "name": payload.get("name"),
+            "plate": payload.get("plate"),
+            "plate_norm": payload.get("plate_norm"),
+        }
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+
+def get_jwt_user(authorization: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Extract user from Authorization header (Bearer token)."""
+    if not authorization:
+        return None
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return verify_jwt_token(parts[1])
+
+
+# ------------------------------------------------------------
+# MOBILE AUTH ENDPOINTS (JWT-based)
+# ------------------------------------------------------------
+class MobileAuthPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    plate: str = Field(..., min_length=1, max_length=32)
+
+
+@app.post("/api/mobile/register")
+async def mobile_register(payload: MobileAuthPayload):
+    """Register new user and return JWT token for mobile app."""
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Base de dados indisponivel.")
+    name = payload.name.strip()
+    plate = payload.plate.strip()
+    plate_norm = normalize_plate_text(plate)
+    if not name or not plate_norm:
+        raise HTTPException(status_code=400, detail="Nome e placa validos sao obrigatorios.")
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO public.parking_web_users (full_name, plate, plate_norm)
+                VALUES ($1, $2, $3)
+                RETURNING full_name, plate, plate_norm
+                """,
+                name,
+                plate,
+                plate_norm,
+            )
+    except pg_exceptions.UniqueViolationError:
+        raise HTTPException(status_code=400, detail="Placa ja registada.")
+    await refresh_users_cache()
+    user_data = {"name": row["full_name"], "plate": row["plate"], "plate_norm": row["plate_norm"]}
+    token = generate_jwt_token(user_data)
+    return {"token": token, "user": {"name": user_data["name"], "plate": user_data["plate"]}}
+
+
+@app.post("/api/mobile/login")
+async def mobile_login(payload: MobileAuthPayload):
+    """Login user and return JWT token for mobile app."""
+    plate_norm = normalize_plate_text(payload.plate)
+    if not plate_norm:
+        raise HTTPException(status_code=400, detail="Placa invalida.")
+    user = await ensure_user_loaded(plate_norm)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+    if user["name"].strip().lower() != payload.name.strip().lower():
+        raise HTTPException(status_code=401, detail="Nome nao confere com a placa.")
+    user_data = {"name": user["name"], "plate": user["plate"], "plate_norm": user["plate_norm"]}
+    token = generate_jwt_token(user_data)
+    return {"token": token, "user": {"name": user_data["name"], "plate": user_data["plate"]}}
+
+
+@app.get("/api/mobile/me")
+async def mobile_me(authorization: Optional[str] = Header(None)):
+    """Get current user from JWT token."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    return user
+
+
+@app.get("/api/mobile/sessions")
+async def mobile_sessions(authorization: Optional[str] = Header(None)):
+    """Get parking sessions for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        return {"sessions": []}
+    
+    # Use plate for matching since plate_norm may not exist in sessions table
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, plate, entry_time, exit_time, spot, 
+                   amount_due, amount_paid, status, payment_deadline, notes
+            FROM public.parking_sessions
+            WHERE UPPER(REPLACE(REPLACE(plate, '-', ''), ' ', '')) = $1
+            ORDER BY entry_time DESC
+            LIMIT 20
+            """,
+            user["plate_norm"],
+        )
+    
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "id": row["id"],
+            "plate": row["plate"],
+            "entry_time": row["entry_time"].isoformat() if row["entry_time"] else None,
+            "exit_time": row["exit_time"].isoformat() if row["exit_time"] else None,
+            "spot": row["spot"],
+            "amount_due": float(row["amount_due"]) if row["amount_due"] else 0,
+            "amount_paid": float(row["amount_paid"]) if row["amount_paid"] else 0,
+            "status": row["status"],
+            "payment_deadline": row["payment_deadline"].isoformat() if row["payment_deadline"] else None,
+            "notes": row["notes"],
+        })
+    
+    return {"sessions": sessions}
+
+
+@app.get("/api/mobile/reservations")
+async def mobile_reservations(authorization: Optional[str] = Header(None)):
+    """Get reservations for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    records = await refresh_reservations_cache()
+    user_reservations = [
+        r for r in records 
+        if r.get("plate_norm") == user["plate_norm"]
+    ]
+    return {"reservations": user_reservations}
+
+
+@app.post("/api/mobile/reservations")
+async def mobile_create_reservation(
+    payload: ReservationPayload, 
+    authorization: Optional[str] = Header(None)
+):
+    """Create reservation for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    ensure_spot_meta_loaded()
+    spot_name = resolve_spot_name(payload.spot)
+    if spot_name is None:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada")
+    
+    meta = g_spot_meta.get(spot_name, {})
+    if meta.get("reserved"):
+        raise HTTPException(status_code=400, detail="Esta vaga ja esta reservada permanentemente.")
+
+    with g_lock:
+        spot_state = g_spot_status.get(spot_name)
+    if spot_state and spot_state.get("occupied"):
+        raise HTTPException(status_code=400, detail="Nao e possivel reservar uma vaga ocupada.")
+
+    prune_expired_reservations()
+
+    RESERVATION_EXPIRY_HOURS = payload.duration_hours or 12
+    expires_at = time.time() + RESERVATION_EXPIRY_HOURS * 3600
+
+    with g_reservations_lock:
+        if spot_name in g_active_reservations:
+            raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
+
+    if db_pool:
+        expires_dt = datetime.fromtimestamp(expires_at, tz=timezone.utc)
+        async with db_pool.acquire() as conn:
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO public.parking_manual_reservations
+                        (spot, plate, plate_norm, reserved_by, reserved_until)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    spot_name,
+                    user["plate"],
+                    user["plate_norm"],
+                    user["name"],
+                    expires_dt,
+                )
+            except pg_exceptions.UniqueViolationError:
+                raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
+        await refresh_reservations_cache()
+    
+    return {"spot": spot_name, "plate": user["plate"], "expires_at": expires_at, "duration_hours": RESERVATION_EXPIRY_HOURS}
+
+
+@app.delete("/api/mobile/reservations/{spot_name}")
+async def mobile_cancel_reservation(spot_name: str, authorization: Optional[str] = Header(None)):
+    """Cancel a reservation for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    resolved_spot = resolve_spot_name(spot_name)
+    if not resolved_spot:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
+    
+    # Check if user owns this reservation
+    with g_reservations_lock:
+        reservation = g_active_reservations.get(resolved_spot)
+        if not reservation:
+            raise HTTPException(status_code=404, detail="Reserva nao encontrada.")
+        if reservation.get("plate_norm") != user["plate_norm"]:
+            raise HTTPException(status_code=403, detail="Esta reserva nao pertence a si.")
+        
+        # Remove from memory
+        del g_active_reservations[resolved_spot]
+    
+    # Remove from database
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                DELETE FROM public.parking_manual_reservations 
+                WHERE spot = $1 AND plate_norm = $2
+                """,
+                resolved_spot,
+                user["plate_norm"],
+            )
+        await refresh_reservations_cache()
+    
+    return {"message": f"Reserva da vaga {resolved_spot} cancelada com sucesso."}
+
+@app.post("/api/mobile/payments")
+async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] = Header(None)):
+    """Process payment for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    session_id = payload.session_id
+    amount = round(payload.amount, 2)
+    method = payload.method
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        session = await conn.fetchrow(
+            """
+            SELECT id, plate, amount_due, amount_paid, status
+            FROM public.parking_sessions
+            WHERE id = $1
+            """,
+            session_id,
+        )
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
+        
+        # Verify session belongs to user (compare normalized plates)
+        session_plate_norm = normalize_plate_text(session["plate"])
+        if session_plate_norm != user["plate_norm"]:
+            raise HTTPException(status_code=403, detail="Sessao nao pertence a este utilizador.")
+        
+        await conn.execute(
+            """
+            INSERT INTO public.parking_payments (session_id, amount, method)
+            VALUES ($1, $2, $3)
+            """,
+            session_id,
+            amount,
+            method,
+        )
+        
+        current_paid = session["amount_paid"] or 0
+        new_paid = round(current_paid + amount, 2)
+        amount_due = session["amount_due"] or 0
+        
+        new_status = 'paid' if new_paid >= amount_due else session["status"]
+        payment_deadline = datetime.now(tz=timezone.utc) + timedelta(minutes=15)
+        
+        await conn.execute(
+            """
+            UPDATE public.parking_sessions
+            SET amount_paid = $1, status = $2, payment_deadline = $3
+            WHERE id = $4
+            """,
+            new_paid,
+            new_status,
+            payment_deadline,
+            session_id,
+        )
+        
+        print(f"[PAYMENT] ✅ Mobile payment: Session {session_id} | Amount: €{amount} | Deadline: {payment_deadline.isoformat()}")
+    
+    return {
+        "session_id": session_id,
+        "amount_paid": float(new_paid),
+        "amount_due": float(amount_due),
+        "status": new_status,
+        "payment_method": method,
+        "payment_amount": float(amount),
+        "payment_deadline": payment_deadline.isoformat(),
+        "message": "Pagamento efetuado! Tem 15 minutos para sair do parque."
+    }
 
 
 # ------------------------------------------------------------
