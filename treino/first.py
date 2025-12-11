@@ -58,22 +58,31 @@ while True:
     h, w = frame.shape[:2]
 
     for spot in spots:
+        # Criar máscara APENAS para esta vaga
         mask = np.zeros((h, w), dtype=np.uint8)
         cv2.fillPoly(mask, [spot["pts"]], 255)
 
-        # aplicar máscara
-        spot_img = cv2.bitwise_and(frame, frame, mask=mask)
-
+        # Recortar bounding box primeiro (para reduzir área)
         x, y, w_box, h_box = cv2.boundingRect(spot["pts"])
-        spot_crop = spot_img[y:y+h_box, x:x+w_box]
+        
+        # Recortar frame e máscara para a bounding box
+        frame_crop = frame[y:y+h_box, x:x+w_box]
+        mask_crop = mask[y:y+h_box, x:x+w_box]
+        
+        # Aplicar máscara APENAS na área recortada
+        spot_img = cv2.bitwise_and(frame_crop, frame_crop, mask=mask_crop)
+        
+        # Colocar fundo PRETO nas áreas fora da vaga (em vez de transparente)
+        spot_img[mask_crop == 0] = [0, 0, 0]
 
-        if spot_crop.size == 0:
+        if spot_img.size == 0:
             continue
 
-        # para guardar para rotular, podes manter maior (ex: 128x128)
-        spot_crop = cv2.resize(spot_crop, (128, 128))
+        # Resize mantendo proporções (padding se necessário)
+        spot_resized = cv2.resize(spot_img, (128, 128))
+        
         out_name = OUT_DIR / f"{spot['name']}_f{frame_idx:05d}.png"
-        cv2.imwrite(str(out_name), spot_crop)
+        cv2.imwrite(str(out_name), spot_resized)
 
     frame_idx += 1
 

@@ -12,6 +12,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Sessions = lazy(() => import('./pages/Sessions'));
 const Payment = lazy(() => import('./pages/Payment'));
+const Pagamento = lazy(() => import('./pages/Pagamento'));
 
 const LoadingFallback = () => (
     <div className="flex justify-center items-center" style={{ minHeight: '50vh' }}>
@@ -34,6 +35,7 @@ const App = () => {
                     <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
                     <Route path="/sessions" element={<ProtectedRoute><Sessions /></ProtectedRoute>} />
                     <Route path="/payment/:sessionId" element={<ProtectedRoute><Payment /></ProtectedRoute>} />
+                    <Route path="/pagamento" element={<Pagamento />} />
                 </Routes>
             </Suspense>
         </Layout>

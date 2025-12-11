@@ -7,6 +7,7 @@ import os
 import cv2
 import numpy as np
 import json
+import traceback
 from pathlib import Path
 from collections import defaultdict, deque
 import threading
@@ -34,6 +35,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from spot_classifier import SpotClassifier
+from esp32_capture_wrapper import get_video_capture
 
 try:
     from supabaseStorage import SupabaseStorageService
@@ -454,15 +456,80 @@ def get_session_user(request: Request) -> Optional[Dict[str, Any]]:
 
 
 def prune_expired_reservations():
+    """
+    Remove reservas expiradas e aplica multa se não foram usadas.
+    Multa = sessão com status 'fine_pending' para reservas não utilizadas.
+    """
     now = time.time()
     expired: List[str] = []
+    expired_with_fine: List[Dict] = []  # Reservas expiradas que precisam de multa
+    
     with g_reservations_lock:
         for spot, info in list(g_active_reservations.items()):
             if info.get("expires_at", 0) <= now:
                 expired.append(spot)
+                # Guardar info para aplicar multa
+                expired_with_fine.append({
+                    "spot": spot,
+                    "plate": info.get("plate_raw"),
+                    "plate_norm": info.get("plate_norm"),
+                    "reserved_by": info.get("reserved_by"),
+                })
                 g_active_reservations.pop(spot, None)
+    
     if expired and db_pool and event_loop:
         asyncio.run_coroutine_threadsafe(db_delete_reservations(expired), event_loop)
+        # Aplicar multas para reservas não usadas
+        asyncio.run_coroutine_threadsafe(
+            apply_reservation_fines(expired_with_fine),
+            event_loop
+        )
+
+
+async def apply_reservation_fines(expired_reservations: List[Dict]):
+    """
+    Aplica multa para reservas que expiraram sem serem usadas.
+    Cria uma sessão com status 'fine_pending' e amount_due = multa.
+    """
+    if not db_pool or not expired_reservations:
+        return
+    
+    RESERVATION_FINE = 5.00  # Multa de 5€ por não usar reserva
+    
+    async with db_pool.acquire() as conn:
+        for res in expired_reservations:
+            try:
+                # Verificar se houve sessão aberta para esta matrícula durante a reserva
+                # Se não houve, então não usou a reserva → multa
+                existing = await conn.fetchrow(
+                    """
+                    SELECT id FROM public.parking_sessions
+                    WHERE plate_norm = $1 
+                      AND spot = $2
+                      AND status IN ('open', 'closed')
+                    LIMIT 1
+                    """,
+                    res.get("plate_norm"),
+                    res.get("spot"),
+                )
+                
+                if not existing:
+                    # Não usou a reserva → criar sessão de multa
+                    await conn.execute(
+                        """
+                        INSERT INTO public.parking_sessions 
+                            (plate, plate_norm, spot, status, amount_due, notes)
+                        VALUES ($1, $2, $3, 'fine_pending', $4, $5)
+                        """,
+                        res.get("plate"),
+                        res.get("plate_norm"),
+                        res.get("spot"),
+                        RESERVATION_FINE,
+                        f"Multa: reserva do spot {res.get('spot')} expirou sem ser usada",
+                    )
+                    print(f"[INFO] 💰 Multa aplicada: {res.get('plate')} não usou reserva do {res.get('spot')}")
+            except Exception as e:
+                print(f"[ERROR] Falha ao aplicar multa: {e}")
 
 
 def get_reservation_info(name: str) -> Optional[Dict[str, Any]]:
@@ -508,6 +575,9 @@ def _run_alpr_job(name: str, crop: np.ndarray):
         _normalize_confidence(getattr(first.detection, "confidence", None))
         if getattr(first, "detection", None) else None
     )
+    
+    if plate:
+        print(f"[INFO] ✅ ALPR detetou matrícula em {name}: {plate} (conf: {ocr_conf:.2f})" if ocr_conf else f"[INFO] ✅ ALPR detetou matrícula em {name}: {plate}")
 
     event = {
         "spot": name,
@@ -518,6 +588,44 @@ def _run_alpr_job(name: str, crop: np.ndarray):
     }
     return name, event
 
+async def update_session_spot(plate: str, spot: str):
+    """
+    Atualiza a sessão aberta com a vaga onde o carro estacionou.
+    Chamado quando o sistema de CV deteta que uma vaga foi ocupada.
+    """
+    if not db_pool:
+        print("[WARN] update_session_spot: db_pool não disponível")
+        return
+    
+    plate_norm = normalize_plate_text(plate)
+    
+    async with db_pool.acquire() as conn:
+        try:
+            # Atualizar APENAS sessões abertas SEM vaga ainda atribuída
+            result = await conn.execute(
+                """
+                UPDATE public.parking_sessions
+                SET spot = $1, plate_norm = $2
+                WHERE plate = $3 
+                  AND status = 'open' 
+                  AND spot IS NULL
+                  AND exit_time IS NULL
+                RETURNING id
+                """,
+                spot,
+                plate_norm,
+                plate
+            )
+            
+            # Verificar se atualizou alguma linha
+            rows_updated = result.split()[-1]
+            if rows_updated != "0":
+                print(f"[INFO] ✅ Sessão atualizada: {plate} → vaga {spot}")
+            else:
+                print(f"[WARN] Nenhuma sessão aberta encontrada para {plate} (pode já ter vaga atribuída)")
+                
+        except Exception as e:
+            print(f"[ERROR] update_session_spot falhou: {e}")
 
 def _handle_alpr_future(future: Future):
     try:
@@ -540,6 +648,12 @@ def _handle_alpr_future(future: Future):
     reserved = bool(base_reserved or reservation_info)
     if reservation_info and reservation_info.get("plate_norm"):
         allowed.add(reservation_info["plate_norm"])
+
+    if event.get("plate") and db_pool and event_loop:
+        asyncio.run_coroutine_threadsafe(
+            update_session_spot(event["plate"], name),
+            event_loop
+        )
 
     plate_norm = normalize_plate_text(event["plate"])
     violation = bool(
@@ -703,7 +817,7 @@ def parking_monitor_loop():
 
     # abrir vÃ­deo / stream
     source_is_file = isinstance(VIDEO_SOURCE, str) and Path(VIDEO_SOURCE).is_file()
-    cap = cv2.VideoCapture(VIDEO_SOURCE)
+    cap = get_video_capture(VIDEO_SOURCE)  # Usa o wrapper inteligente
     if not cap.isOpened():
         print(f"[ERRO] NÃ£o abriu vÃ­deo/stream: {VIDEO_SOURCE}")
         return
@@ -795,8 +909,8 @@ def parking_monitor_loop():
                     if occ_final and not prev_occ:
                         crop_pts = spot_lookup.get(name, {}).get("points", pts)
                         crop = extract_spot_crop(frame, crop_pts)
-                        if is_reserved:
-                            schedule_alpr(name, crop)
+                        # Ativar ALPR para todas as vagas quando ficam ocupadas
+                        schedule_alpr(name, crop)
                     elif not occ_final:
                         clear_plate_for_spot(name)
                     last_occupancy[name] = occ_final
@@ -857,7 +971,7 @@ def plate_events():
 
 class ReservationPayload(BaseModel):
     spot: str = Field(..., min_length=1)
-    hours: Optional[float] = Field(default=None, gt=0)
+    # Reserva expira em 12 horas se não for usada (para aplicar multa)
 
 
 class AuthPayload(BaseModel):
@@ -921,8 +1035,9 @@ async def create_reservation(payload: ReservationPayload, request: Request):
 
     prune_expired_reservations()
 
-    duration = payload.hours if payload.hours and payload.hours > 0 else DEFAULT_RESERVATION_HOURS
-    expires_at = time.time() + duration * 3600
+    # Reserva expira em 12 horas (multa se não usar)
+    RESERVATION_EXPIRY_HOURS = 12
+    expires_at = time.time() + RESERVATION_EXPIRY_HOURS * 3600
     plate_norm = normalize_plate_text(plate_value)
 
     with g_reservations_lock:
@@ -1149,13 +1264,15 @@ async def api_entry(camera_id: str = Form(...), image: UploadFile = File(...)):
                     # Não bloqueia o fluxo caso falhe o upload
             
             # Criar nova entrada com a URL da imagem
+            plate_norm = normalize_plate_text(plate)
             row = await conn.fetchrow(
                 """
-                INSERT INTO public.parking_sessions (plate, camera_id, status, entry_image_url)
-                VALUES ($1, $2, 'open', $3)
+                INSERT INTO public.parking_sessions (plate, plate_norm, camera_id, status, entry_image_url)
+                VALUES ($1, $2, $3, 'open', $4)
                 RETURNING id, entry_time
                 """,
                 plate,
+                plate_norm,
                 camera_id,
                 image_url,
             )
@@ -1174,6 +1291,7 @@ async def api_entry(camera_id: str = Form(...), image: UploadFile = File(...)):
 async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
     """
     Registra saída de veículo.
+    VALIDA: Pagamento efetuado + Deadline de 10min não expirado
     Recebe imagem da matrícula do ESP32 e usa ALPR para detectar a placa.
     """
     if not camera_id:
@@ -1188,6 +1306,9 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
     if not plate:
         raise HTTPException(status_code=400, detail="Nenhuma matricula detectada na imagem.")
     
+    # Normalizar matrícula para comparação
+    plate_norm = normalize_plate_text(plate)
+    
     # Usar imagem anotada para upload, ou original se anotação falhou
     upload_bytes = annotated_image_bytes if annotated_image_bytes else image_bytes
     
@@ -1195,37 +1316,67 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
     
     async with db_pool.acquire() as conn:
+        # Buscar sessão aberta OU paga (usar plate_norm para comparação)
+        # Status 'open' = ainda não pagou, 'paid' = pagou e pode sair
         session = await conn.fetchrow(
             """
-            SELECT id, entry_time, exit_time, status
+            SELECT id, plate, entry_time, exit_time, spot, amount_due, amount_paid, payment_deadline, status
             FROM public.parking_sessions
-            WHERE plate = $1 AND status = 'open'
+            WHERE (plate_norm = $1 OR plate = $2)
+              AND status IN ('open', 'paid')
+              AND exit_time IS NULL
             ORDER BY entry_time DESC
             LIMIT 1
             """,
+            plate_norm,
             plate,
         )
         
-        if not session:
-            raise HTTPException(status_code=404, detail="Nenhuma sessao aberta encontrada para esta placa.")
+        # DEBUG: Ver o que está a ser procurado
+        print(f"[EXIT DEBUG] Placa detectada: {plate}")
+        print(f"[EXIT DEBUG] Placa normalizada: {plate_norm}")
+        print(f"[EXIT DEBUG] Sessão encontrada: {session}")
         
-        # Verificar se já tem saída registrada (prevenção de dupla saída)
-        if session["exit_time"] is not None:
-            return JSONResponse({
-                "session_id": session["id"],
-                "plate": plate,
-                "duplicate": True,
-                "message": "Saida ja registrada para esta sessao.",
-                "exit_time": session["exit_time"].isoformat(),
-            })
+        if not session:
+            # DEBUG: Procurar qualquer sessão com esta placa para ver o status
+            debug_session = await conn.fetchrow(
+                """
+                SELECT id, plate, plate_norm, status, exit_time, amount_paid
+                FROM public.parking_sessions
+                WHERE (plate_norm = $1 OR plate = $2)
+                ORDER BY entry_time DESC
+                LIMIT 1
+                """,
+                plate_norm,
+                plate,
+            )
+            print(f"[EXIT DEBUG] Sessão mais recente (qualquer status): {debug_session}")
+            
+            raise HTTPException(
+                status_code=404, 
+                detail="Nenhuma sessao aberta encontrada para esta placa."
+            )
+        
+        # VALIDAR PAGAMENTO
+        if session["amount_paid"] is None or session["amount_paid"] == 0:
+            raise HTTPException(
+                status_code=402,  # Payment Required
+                detail="Pagamento nao efetuado. Use o app para pagar antes de sair."
+            )
+        
+        # VALIDAR DEADLINE DE 10 MINUTOS
+        if session["payment_deadline"]:
+            now = datetime.now(tz=timezone.utc)
+            
+            if now > session["payment_deadline"]:
+                raise HTTPException(
+                    status_code=403,  # Forbidden
+                    detail="Pagamento expirado (prazo de 10min excedido). Efetue novo pagamento."
+                )
         
         session_id = session["id"]
         entry_time = session["entry_time"]
         exit_time = datetime.now(tz=timezone.utc)
-        
-        duration_seconds = (exit_time - entry_time).total_seconds()
-        duration_hours = duration_seconds / 3600.0
-        amount_due = round(duration_hours * PARKING_RATE_PER_HOUR, 2)
         
         # Upload da imagem de saída para Supabase
         exit_image_url = None
@@ -1233,37 +1384,149 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
             try:
                 exit_image_url = supabase_storage.upload_and_get_url(
                     image_bytes=upload_bytes,
-                    plate=f"{plate}/exit",  # Pasta separada para saídas
-                    expires_in=365 * 24 * 3600,  # 1 ano
+                    plate=f"{plate}/exit",
+                    expires_in=365 * 24 * 3600,
                     ext="jpg"
                 )
                 print(f"[INFO] Imagem de saída uploaded: {exit_image_url}")
             except Exception as e:
                 print(f"[WARN] Falha ao fazer upload da imagem de saída: {e}")
         
-        # Atualizar sessão com saída e marcar como 'paid' (fechar sessão)
+        # ✅ ATUALIZAR SESSÃO - Fechar com status 'closed'
         await conn.execute(
             """
             UPDATE public.parking_sessions
-            SET exit_time = $1, amount_due = $2, status = 'paid', exit_image_url = $3
-            WHERE id = $4
+            SET exit_time = $1, status = 'closed', exit_image_url = $2
+            WHERE id = $3
             """,
             exit_time,
-            amount_due,
             exit_image_url,
             session_id,
         )
+        
+        print(f"[EXIT] ✅ Saída autorizada: {plate} (vaga {session['spot']})")
     
     return JSONResponse({
         "session_id": session_id,
-        "plate": plate,
+        "plate": session["plate"],
         "entry_time": entry_time.isoformat(),
         "exit_time": exit_time.isoformat(),
-        "amount_due": amount_due,
+        "amount_due": float(session["amount_due"] or 0),
+        "amount_paid": float(session["amount_paid"] or 0),
+        "spot": session["spot"],
         "camera_id": camera_id,
+        "message": "Saida autorizada. Boa viagem!"
     })
 
 
+@app.post("/api/parking-spot-occupied")
+async def parking_spot_occupied(
+    request: Request,
+    spot_id: str = Form(...),
+    camera_id: str = Form(...)
+):
+    """
+    Endpoint chamado pela ESP32-CAM quando uma vaga fica ocupada.
+    Recebe: foto + spot_id (ex: 'A1')
+    Processa: ALPR para obter matrícula
+    Atualiza: sessão aberta com a vaga
+    """
+    try:
+        # 1. Receber imagem
+        form_data = await request.form()
+        image_file = form_data.get("imageFile")
+        
+        if not image_file:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No image provided"}
+            )
+        
+        # 2. Ler bytes da imagem
+        image_bytes = await image_file.read()
+        
+        print(f"[INFO] Vaga {spot_id} ocupada, processando ALPR...")
+        
+        # 3. Executar ALPR
+        plate = await run_alpr_on_image(image_bytes)
+        
+        if not plate:
+            print(f"[WARN] Nenhuma matrícula detetada na vaga {spot_id}")
+            return JSONResponse(
+                status_code=200,
+                content={"success": False, "message": "No plate detected"}
+            )
+        
+        # 4. Atualizar sessão com a vaga
+        plate_norm = normalize_plate_text(plate)
+        
+        if db_pool:
+            async with db_pool.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    UPDATE public.parking_sessions
+                    SET spot = $1
+                    WHERE plate_norm = $2 
+                      AND status = 'open' 
+                      AND spot IS NULL
+                    RETURNING id
+                    """,
+                    spot_id,
+                    plate_norm
+                )
+                
+                if result.split()[-1] == "0":
+                    print(f"[WARN] Nenhuma sessão aberta encontrada para {plate}")
+                    return JSONResponse(
+                        status_code=404,
+                        content={"error": "No open session found for this plate"}
+                    )
+                
+                print(f"[SUCCESS] Sessão atualizada: {plate} → Vaga {spot_id}")
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "plate": plate,
+                "spot": spot_id
+            }
+        )
+        
+    except Exception as e:
+        print(f"[ERROR] /api/parking-spot-occupied: {e}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+async def run_alpr_on_image(image_bytes: bytes) -> Optional[str]:
+    """
+    Executa ALPR numa imagem e retorna a matrícula detetada.
+    """
+    try:
+        # Converter bytes para imagem OpenCV
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            print("[ERROR] Falha ao descodificar imagem")
+            return None
+        
+        # Executar ALPR (usar a mesma lógica do alpr.py)
+        from alpr import recognize_plate_easyocr
+        
+        plate_text = recognize_plate_easyocr(img)
+        
+        if plate_text and len(plate_text) >= 6:
+            return plate_text.upper().replace(" ", "")
+        
+        return None
+        
+    except Exception as e:
+        print(f"[ERROR] run_alpr_on_image: {e}")
+        return None
 
 @app.post("/api/payments")
 async def api_payments(payload: PaymentPayload):
@@ -1287,6 +1550,7 @@ async def api_payments(payload: PaymentPayload):
         if not session:
             raise HTTPException(status_code=404, detail="Sessao nao encontrada.")
         
+        # ✅ Inserir registo de pagamento
         await conn.execute(
             """
             INSERT INTO public.parking_payments (session_id, amount, method)
@@ -1303,16 +1567,24 @@ async def api_payments(payload: PaymentPayload):
         
         new_status = 'paid' if new_paid >= amount_due else session["status"]
         
+        # ✅ DEFINIR DEADLINE DE 10 MINUTOS PARA SAÍDA
+        from datetime import timedelta
+        payment_deadline = datetime.now(tz=timezone.utc) + timedelta(minutes=10)
+        
+        # ✅ Atualizar sessão com pagamento E deadline
         await conn.execute(
             """
             UPDATE public.parking_sessions
-            SET amount_paid = $1, status = $2
-            WHERE id = $3
+            SET amount_paid = $1, status = $2, payment_deadline = $3
+            WHERE id = $4
             """,
             new_paid,
             new_status,
+            payment_deadline,
             session_id,
         )
+        
+        print(f"[PAYMENT] ✅ Pagamento registado: Sessão {session_id} | Valor: €{amount} | Prazo saída: {payment_deadline.isoformat()}")
     
     return JSONResponse({
         "session_id": session_id,
@@ -1321,6 +1593,8 @@ async def api_payments(payload: PaymentPayload):
         "status": new_status,
         "payment_method": method,
         "payment_amount": float(amount),
+        "payment_deadline": payment_deadline.isoformat(),
+        "message": "Pagamento efetuado! Tem 10 minutos para sair do parque."
     })
 
 
@@ -1502,6 +1776,308 @@ async def simulate_payment(session_id: int, payload: PaymentPayload):
     """Simulate payment for a session (for academic purposes)."""
     # This just calls the existing payment endpoint
     return await api_payments(payload)
+
+
+# ------------------------------------------------------------
+# PAYMENT PAGE (Frontend para pagar estacionamento)
+# ------------------------------------------------------------
+@app.get("/payment")
+def payment_page():
+    return HTMLResponse("""
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pagamento - Parking System</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: linear-gradient(135deg, #0f1115 0%, #1a1d23 100%); 
+            color: #f2f2f2; 
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 30px; color: #3a8ef6; }
+        .card {
+            background: #1b1e24;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 15px;
+            font-size: 18px;
+            border: 2px solid #3a8ef6;
+            border-radius: 8px;
+            background: #0f1115;
+            color: white;
+            text-transform: uppercase;
+        }
+        button {
+            padding: 15px 25px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+        button:hover { transform: scale(1.02); }
+        .btn-primary { background: #3a8ef6; color: white; }
+        .btn-success { background: #28a745; color: white; font-size: 18px; width: 100%; padding: 18px; }
+        .btn-success:disabled { background: #555; cursor: not-allowed; }
+        .session-info {
+            display: none;
+            margin-top: 20px;
+        }
+        .session-info.active { display: block; }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #333;
+        }
+        .info-label { color: #888; }
+        .info-value { font-weight: bold; }
+        .amount-due {
+            font-size: 32px;
+            text-align: center;
+            color: #ff6b6b;
+            margin: 20px 0;
+        }
+        .amount-due.paid { color: #28a745; }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .status-open { background: #3a8ef6; }
+        .status-paid { background: #28a745; }
+        .status-closed { background: #6c757d; }
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        .message.success { background: rgba(40, 167, 69, 0.2); color: #28a745; }
+        .message.error { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
+        .payment-methods {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .payment-method {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .payment-method:hover { border-color: #3a8ef6; }
+        .payment-method.selected { border-color: #3a8ef6; background: rgba(58, 142, 246, 0.1); }
+        .back-link { text-align: center; margin-top: 20px; }
+        .back-link a { color: #3a8ef6; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💳 Pagamento de Estacionamento</h1>
+        
+        <div class="card">
+            <h3>Procurar minha sessao</h3>
+            <div class="search-box">
+                <input type="text" id="plateInput" placeholder="Matricula (ex: AB-12-CD)" maxlength="20">
+                <button class="btn-primary" onclick="searchSession()">Procurar</button>
+            </div>
+            
+            <div id="sessionInfo" class="session-info">
+                <div class="info-row">
+                    <span class="info-label">Matricula:</span>
+                    <span class="info-value" id="infoPlate">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Entrada:</span>
+                    <span class="info-value" id="infoEntry">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Vaga:</span>
+                    <span class="info-value" id="infoSpot">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Tempo:</span>
+                    <span class="info-value" id="infoTime">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Estado:</span>
+                    <span class="info-value" id="infoStatus">-</span>
+                </div>
+                
+                <div class="amount-due" id="amountDue">€0.00</div>
+                
+                <div id="paymentSection">
+                    <h4 style="margin-bottom: 15px;">Metodo de pagamento:</h4>
+                    <div class="payment-methods">
+                        <div class="payment-method selected" data-method="card" onclick="selectMethod(this)">💳 Cartao</div>
+                        <div class="payment-method" data-method="mbway" onclick="selectMethod(this)">📱 MBWay</div>
+                        <div class="payment-method" data-method="cash" onclick="selectMethod(this)">💰 Numerario</div>
+                    </div>
+                    <button id="payBtn" class="btn-success" onclick="processPayment()">Pagar e Sair</button>
+                </div>
+                
+                <div id="messageBox" class="message" style="display: none;"></div>
+            </div>
+        </div>
+        
+        <div class="back-link">
+            <a href="/">← Voltar ao inicio</a>
+        </div>
+    </div>
+
+    <script>
+        let currentSession = null;
+        let selectedMethod = 'card';
+        
+        function selectMethod(el) {
+            document.querySelectorAll('.payment-method').forEach(m => m.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedMethod = el.dataset.method;
+        }
+        
+        async function searchSession() {
+            const plate = document.getElementById('plateInput').value.toUpperCase().trim();
+            if (!plate) {
+                showMessage('Introduza a matricula', 'error');
+                return;
+            }
+            
+            try {
+                const resp = await fetch(`/api/sessions?plate=${encodeURIComponent(plate)}&status=open&limit=1`);
+                const data = await resp.json();
+                
+                if (!data.sessions || data.sessions.length === 0) {
+                    showMessage('Nenhuma sessao aberta encontrada para esta matricula', 'error');
+                    document.getElementById('sessionInfo').classList.remove('active');
+                    return;
+                }
+                
+                currentSession = data.sessions[0];
+                displaySession(currentSession);
+                
+            } catch (err) {
+                showMessage('Erro ao procurar sessao: ' + err.message, 'error');
+            }
+        }
+        
+        function displaySession(session) {
+            document.getElementById('sessionInfo').classList.add('active');
+            document.getElementById('infoPlate').textContent = session.plate;
+            document.getElementById('infoEntry').textContent = new Date(session.entry_time).toLocaleString('pt-PT');
+            document.getElementById('infoSpot').textContent = session.spot || 'Nao atribuida';
+            
+            // Calculate time
+            const entry = new Date(session.entry_time);
+            const now = new Date();
+            const diffMs = now - entry;
+            const hours = Math.floor(diffMs / 3600000);
+            const mins = Math.floor((diffMs % 3600000) / 60000);
+            document.getElementById('infoTime').textContent = `${hours}h ${mins}min`;
+            
+            // Calculate amount (1.50€/hour)
+            const amount = Math.max(0.50, (diffMs / 3600000) * 1.50).toFixed(2);
+            document.getElementById('amountDue').textContent = `€${amount}`;
+            document.getElementById('amountDue').className = 'amount-due';
+            
+            // Status
+            const statusEl = document.getElementById('infoStatus');
+            if (session.amount_paid > 0) {
+                statusEl.innerHTML = '<span class="status-badge status-paid">PAGO</span>';
+                document.getElementById('amountDue').textContent = '✅ PAGO';
+                document.getElementById('amountDue').className = 'amount-due paid';
+                document.getElementById('payBtn').disabled = true;
+                document.getElementById('payBtn').textContent = 'Ja pago - Pode sair';
+            } else {
+                statusEl.innerHTML = '<span class="status-badge status-open">AGUARDA PAGAMENTO</span>';
+                document.getElementById('payBtn').disabled = false;
+                document.getElementById('payBtn').textContent = 'Pagar €' + amount + ' e Sair';
+            }
+            
+            hideMessage();
+        }
+        
+        async function processPayment() {
+            if (!currentSession) return;
+            
+            const btn = document.getElementById('payBtn');
+            btn.disabled = true;
+            btn.textContent = 'A processar...';
+            
+            // Calculate amount
+            const entry = new Date(currentSession.entry_time);
+            const diffMs = new Date() - entry;
+            const amount = Math.max(0.50, (diffMs / 3600000) * 1.50);
+            
+            try {
+                const resp = await fetch('/api/payments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSession.id,
+                        amount: parseFloat(amount.toFixed(2)),
+                        method: selectedMethod
+                    })
+                });
+                
+                const data = await resp.json();
+                
+                if (!resp.ok) {
+                    throw new Error(data.detail || 'Erro no pagamento');
+                }
+                
+                showMessage('✅ Pagamento efetuado! Tem 10 minutos para sair do parque.', 'success');
+                document.getElementById('amountDue').textContent = '✅ PAGO';
+                document.getElementById('amountDue').className = 'amount-due paid';
+                btn.textContent = 'Pago - Pode sair!';
+                document.getElementById('infoStatus').innerHTML = '<span class="status-badge status-paid">PAGO</span>';
+                
+            } catch (err) {
+                showMessage('Erro: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Tentar novamente';
+            }
+        }
+        
+        function showMessage(msg, type) {
+            const box = document.getElementById('messageBox');
+            box.textContent = msg;
+            box.className = 'message ' + type;
+            box.style.display = 'block';
+        }
+        
+        function hideMessage() {
+            document.getElementById('messageBox').style.display = 'none';
+        }
+        
+        // Enter key to search
+        document.getElementById('plateInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchSession();
+        });
+    </script>
+</body>
+</html>
+    """)
 
 
 
