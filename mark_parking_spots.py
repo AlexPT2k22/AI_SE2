@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--label-prefix",
-        default="spot",
+        default="vaga",
         help="Prefixo usado para nomear cada vaga (ex.: spot01, spot02...).",
     )
     parser.add_argument(
