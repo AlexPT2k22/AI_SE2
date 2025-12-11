@@ -334,7 +334,7 @@ npm start
 # ou
 npx expo start
 ```
-*Scan o QR code com a app Expo Go no telemóvel ou pressione `a` para abrir no emulador Android / `i` para iOS.*
+*Scan o QR code com a app Expo Go no telemóvel ou pressione `a` para abrir no emulador Android / `i` para iOS. (ou conecte via USB e pressione a tecla)*
 
 ---
 
