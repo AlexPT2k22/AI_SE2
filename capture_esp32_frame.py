@@ -6,7 +6,7 @@ import cv2
 import sys
 
 # URL da ESP32-CAM (camara central do estacionamento)
-ESP32_URL = "http://10.254.177.248/stream"
+ESP32_URL = "http://10.254.177.15/stream"
 
 print(f"A tentar conectar à ESP32-CAM: {ESP32_URL}")
 cap = cv2.VideoCapture(ESP32_URL)
@@ -15,8 +15,8 @@ if not cap.isOpened():
     print("Erro: Nao consegui conectar a ESP32-CAM!")
     print("Verifica se:")
     print("  1. A ESP32-CAM esta ligada")
-    print("  2. O IP esta correto (10.254.177.248)")
-    print("  3. Consegues abrir http://10.254.177.248 no browser")
+    print("  2. O IP esta correto (10.254.177.15)")
+    print("  3. Consegues abrir http://10.254.177.15 no browser")
     sys.exit(1)
 
 print("✓ Conectado! A capturar frame...")
