@@ -27,19 +27,31 @@ for img_path in images:
     if img is None:
         continue
 
-    cv2.imshow("Rotular (o=ocupado, l=livre, q=sair)", img)
-    key = cv2.waitKey(0)
-
-    if key == ord('o'):
-        label = 1
-    elif key == ord('l'):
-        label = 0
-    elif key == ord('q'):
-        print("A sair...")
-        break
-    else:
-        print("Tecla inválida, tenta de novo.")
-        continue
+    print(f"\nRotulando: {img_path.name}")
+    print("Pressione: [o]=ocupado, [l]=livre, [q]=sair")
+    
+    cv2.imshow("Rotular Vaga", img)
+    cv2.waitKey(1)  # Atualizar janela
+    
+    # Loop até receber tecla válida
+    while True:
+        key = cv2.waitKey(0) & 0xFF
+        
+        if key == ord('o') or key == ord('O'):
+            label = 1
+            print("Marcado como OCUPADO")
+            break
+        elif key == ord('l') or key == ord('L'):
+            label = 0
+            print("Marcado como LIVRE")
+            break
+        elif key == ord('q') or key == ord('Q'):
+            print("\n[INFO] A sair...")
+            cv2.destroyAllWindows()
+            exit(0)
+        else:
+            print(f"Tecla inválida (código: {key}). Use: o, l ou q")
+            continue
 
     with open(LABELS_FILE, "a", newline="") as f:
         writer = csv.writer(f)
