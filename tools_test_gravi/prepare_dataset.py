@@ -152,7 +152,7 @@ def main():
         # Capturar da ESP32
         import urllib.request
         
-        esp32_url = input("URL da ESP32 (ex: http://10.254.177.15): ").strip()
+        esp32_url = input("URL da ESP32 [http://10.254.177.248]: ").strip() or "http://10.254.177.248"
         capture_url = f"{esp32_url}/capture"
         
         print("\nA capturar frames da ESP32...")
