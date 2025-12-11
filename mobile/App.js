@@ -1,5 +1,5 @@
 // TugaPark Mobile App - Simplified Main Entry
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -7,18 +7,26 @@ import {
   TouchableOpacity, 
   StyleSheet, 
   SafeAreaView,
-  Alert,
   ActivityIndicator,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
   Modal,
+  Animated,
+  Switch,
+  Dimensions,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { LinearGradient } from 'expo-linear-gradient';
+import Toast from 'react-native-toast-message';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // SVG Icon Components
 const DangerIcon = ({ size = 24, color = '#ef4444' }) => (
@@ -48,12 +56,62 @@ const PaymentIcon = ({ size = 24, color = '#3b82f6' }) => (
   </Svg>
 );
 
+// Empty State Icon
+const EmptyBoxIcon = ({ size = 80, color = '#999999' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M20 2H4C2.9 2 2 2.9 2 4V20C2 21.1 2.9 22 4 22H20C21.1 22 22 21.1 22 20V4C22 2.9 21.1 2 20 2ZM20 20H4V4H20V20ZM6 10H18V12H6ZM6 14H14V16H6Z"
+    />
+  </Svg>
+);
+
+// Parking Icon for Empty Spots
+const ParkingIcon = ({ size = 80, color = '#999999' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M13 3H6V21H10V15H13C16.31 15 19 12.31 19 9S16.31 3 13 3ZM13 11H10V7H13C14.1 7 15 7.9 15 9S14.1 11 13 11Z"
+    />
+  </Svg>
+);
+
+// History Icon for Empty Sessions
+const HistoryIcon = ({ size = 80, color = '#999999' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M13 3C8.03 3 4 7.03 4 12H1L4.89 15.89L4.96 16.03L9 12H6C6 8.13 9.13 5 13 5S20 8.13 20 12 16.87 19 13 19C11.07 19 9.32 18.21 8.06 16.94L6.64 18.36C8.27 20 10.5 21 13 21C17.97 21 22 16.97 22 12S17.97 3 13 3ZM12 8V13L16.28 15.54L17 14.33L13.5 12.25V8H12Z"
+    />
+  </Svg>
+);
+
+// Biometric Icon
+const BiometricIcon = ({ size = 24, color = '#666666' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M17.81 4.47C17.73 4.47 17.65 4.45 17.58 4.41C16.21 3.82 14.53 3.5 12.75 3.5C10.97 3.5 9.29 3.82 7.92 4.41C7.66 4.51 7.35 4.39 7.25 4.13C7.15 3.86 7.27 3.56 7.54 3.47C9.03 2.81 10.85 2.5 12.75 2.5C14.65 2.5 16.47 2.81 17.96 3.47C18.22 3.57 18.34 3.87 18.24 4.13C18.17 4.34 17.99 4.47 17.81 4.47ZM3.5 9.72C3.38 9.72 3.26 9.68 3.16 9.6C2.93 9.41 2.91 9.08 3.1 8.85C4.04 7.72 5.26 6.82 6.7 6.2C9.62 4.94 13.17 4.94 16.09 6.2C17.54 6.82 18.75 7.72 19.7 8.85C19.89 9.08 19.87 9.41 19.64 9.6C19.41 9.79 19.08 9.77 18.89 9.54C18.04 8.54 17.04 7.73 15.83 7.2C13.21 6.06 10.08 6.06 7.46 7.2C6.25 7.73 5.25 8.54 4.4 9.54C4.3 9.66 4.15 9.72 3.5 9.72ZM9.75 21.79C9.62 21.79 9.5 21.74 9.39 21.64C8.52 20.77 8 19.63 8 18.5C8 15.88 10.14 13.75 12.75 13.75C15.36 13.75 17.5 15.88 17.5 18.5C17.5 18.77 17.27 19 17 19C16.73 19 16.5 18.77 16.5 18.5C16.5 16.43 14.82 14.75 12.75 14.75C10.68 14.75 9 16.43 9 18.5C9 19.34 9.39 20.21 10.06 20.88C10.26 21.08 10.26 21.42 10.06 21.62C9.97 21.73 9.86 21.79 9.75 21.79ZM12.75 22.5C12.48 22.5 12.25 22.27 12.25 22V20.5C12.25 20.23 12.48 20 12.75 20C13.02 20 13.25 20.23 13.25 20.5V22C13.25 22.27 13.02 22.5 12.75 22.5ZM20.75 22.5C20.63 22.5 20.5 22.45 20.4 22.36C19.32 21.34 18.75 19.97 18.75 18.5C18.75 15.19 21.44 12.5 24.75 12.5C24.75 12.5 25 12.73 25 13C25 13.27 24.77 13.5 24.5 13.5C22.02 13.5 19.75 15.47 19.75 18.5C19.75 19.71 20.22 20.86 21.1 21.7C21.31 21.9 21.31 22.23 21.11 22.44C21.01 22.48 20.88 22.5 20.75 22.5Z"
+    />
+  </Svg>
+);
+
+// Moon Icon for Dark Mode
+const MoonIcon = ({ size = 24, color = '#666666' }) => (
+  <Svg width={size} height={size} viewBox="0 0 64 64">
+    <Path
+      fill={color}
+      d="M55.68,36.83c0.32,0.45,0.41,1.02,0.22,1.57C52.59,47.73,43.72,54,33.83,54c-12.9,0-23.4-10.5-23.4-23.41c0-11.02,7.83-20.65,18.61-22.9c0.12-0.03,0.24-0.04,0.36-0.04c0.65,0,1.23,0.37,1.53,0.96c0.3,0.61,0.24,1.33-0.19,1.89C28.25,13.62,27,17,27,23c0.44,5.97,3.66,11.21,9,14c2.42,1.23,5.62,1.82,8.38,1.82c3.14,0,6.24-0.86,8.96-2.48c0.27-0.17,0.58-0.25,0.9-0.25C54.81,36.09,55.35,36.36,55.68,36.83z"
+    />
+  </Svg>
+);
+
 // API Configuration
 //const API_BASE_URL = 'http://10.0.2.2:8000'; // Android emulator
 const API_BASE_URL = 'http://192.168.68.125:8000'; // Replace with your IP for physical device
 
 // Colors - Light Theme (matching frontend)
-const colors = {
+const lightColors = {
   primary: '#97d700',          // Lime Green
   primaryDark: '#31a100',
   secondary: '#1e1e1e',        // Dark
@@ -72,6 +130,223 @@ const colors = {
   spotAvailable: '#c8e620',
   spotOccupied: '#ef4444',
   spotReserved: '#f59e0b',
+  skeleton: '#e0e0e0',
+  skeletonHighlight: '#f5f5f5',
+};
+
+// Colors - Dark Theme
+const darkColors = {
+  primary: '#97d700',          // Keep lime green
+  primaryDark: '#7ab800',
+  secondary: '#ffffff',        // Invert for contrast
+  background: '#121212',       // Dark background
+  surface: '#1e1e1e',          // Dark surface
+  surfaceHover: '#2a2a2a',
+  text: '#ffffff',             // Light text
+  textSecondary: '#a0a0a0',
+  textMuted: '#666666',
+  textInverse: '#1a1a1a',
+  border: '#333333',
+  success: '#22c55e',
+  danger: '#ef4444',
+  warning: '#f59e0b',
+  info: '#3b82f6',
+  spotAvailable: '#c8e620',
+  spotOccupied: '#ef4444',
+  spotReserved: '#f59e0b',
+  skeleton: '#2a2a2a',
+  skeletonHighlight: '#3a3a3a',
+};
+
+// Default colors (will be overridden by theme)
+let colors = lightColors;
+
+// Helper function to trigger haptic feedback
+const triggerHaptic = (style = 'light') => {
+  const styles = {
+    light: Haptics.ImpactFeedbackStyle.Light,
+    medium: Haptics.ImpactFeedbackStyle.Medium,
+    heavy: Haptics.ImpactFeedbackStyle.Heavy,
+  };
+  Haptics.impactAsync(styles[style] || styles.light);
+};
+
+// Helper function to show toast
+const showToast = (type, text1, text2 = '') => {
+  Toast.show({
+    text1,
+    text2,
+    position: 'top',
+    visibilityTime: 3000,
+    autoHide: true,
+    topOffset: 60,
+  });
+};
+
+// Skeleton Loading Component
+const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          borderRadius,
+          backgroundColor: colors.skeleton,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+// Skeleton Card for Spots/Sessions
+const SkeletonCard = () => (
+  <View style={[styles.card, { padding: 16, marginBottom: 12 }]}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <View>
+        <SkeletonBox width={80} height={20} style={{ marginBottom: 8 }} />
+        <SkeletonBox width={60} height={14} />
+      </View>
+      <SkeletonBox width={80} height={36} borderRadius={8} />
+    </View>
+  </View>
+);
+
+// Empty State Component
+const EmptyState = ({ icon: Icon, title, subtitle, theme }) => (
+  <View style={styles.emptyStateContainer}>
+    <Icon size={80} color={theme.textMuted} />
+    <Text style={[styles.emptyStateTitle, { color: theme.text }]}>{title}</Text>
+    <Text style={[styles.emptyStateSubtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
+  </View>
+);
+
+// Confirmation Modal Component
+const ConfirmModal = ({ visible, title, message, confirmText, cancelText, onConfirm, onCancel, theme, isDanger = false }) => (
+  <Modal
+    visible={visible}
+    transparent={true}
+    animationType="fade"
+    onRequestClose={onCancel}
+  >
+    <View style={styles.confirmModalOverlay}>
+      <View style={[styles.confirmModalContent, { backgroundColor: theme.surface }]}>
+        <Text style={[styles.confirmModalTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.confirmModalMessage, { color: theme.textSecondary }]}>{message}</Text>
+        <View style={styles.confirmModalButtons}>
+          <TouchableOpacity
+            style={[styles.confirmModalBtn, { backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}
+            onPress={() => {
+              triggerHaptic('light');
+              onCancel();
+            }}
+          >
+            <Text style={[styles.confirmModalBtnText, { color: theme.text }]}>{cancelText || 'Cancelar'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.confirmModalBtn, { backgroundColor: isDanger ? theme.danger : theme.primary }]}
+            onPress={() => {
+              triggerHaptic('medium');
+              onConfirm();
+            }}
+          >
+            <Text style={[styles.confirmModalBtnText, { color: isDanger ? '#fff' : theme.secondary }]}>{confirmText || 'Confirmar'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
+// Splash Screen Component
+const SplashScreen = ({ onFinish, theme }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const logoFade = useRef(new Animated.Value(0)).current;
+  
+  // Cores do gradiente baseadas no tema
+  const isDark = theme === darkColors;
+  const gradientColors = isDark 
+    ? ['#1e1e1e', '#2d2d2d', '#1e1e1e']  // Dark mode
+    : ['#f5f5f5', '#ffffff', '#f5f5f5'];  // Light mode
+
+  useEffect(() => {
+    // Animate in
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoFade, {
+        toValue: 1,
+        duration: 800,
+        delay: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Minimum splash duration
+    const timer = setTimeout(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => onFinish());
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Animated.View style={[styles.splashContainer, { opacity: fadeAnim }]}>
+      <LinearGradient
+        colors={gradientColors}
+        style={styles.splashGradient}
+      >
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: logoFade }}>
+          <Text style={[styles.splashTitle, { color: theme.primary }]}>TugaPark</Text>
+          <Text style={[styles.splashSubtitle, { color: theme.textSecondary }]}>Estacionamento inteligente</Text>
+        </Animated.View>
+        <ActivityIndicator color={theme.primary} size="large" style={{ marginTop: 40 }} />
+      </LinearGradient>
+    </Animated.View>
+  );
 };
 
 // API Client
@@ -90,7 +365,7 @@ api.interceptors.request.use(async (config) => {
 });
 
 // Login Screen Component
-const LoginScreen = ({ onLogin }) => {
+const LoginScreen = ({ onLogin, theme }) => {
   const [name, setName] = useState('');
   const [plate, setPlate] = useState('');
   const [isRegister, setIsRegister] = useState(false);
@@ -98,6 +373,8 @@ const LoginScreen = ({ onLogin }) => {
   const [error, setError] = useState('');
 
   const handleSubmit = async () => {
+    triggerHaptic('medium');
+    
     if (!name.trim() || !plate.trim()) {
       setError('Preencha todos os campos');
       return;
@@ -115,17 +392,19 @@ const LoginScreen = ({ onLogin }) => {
 
       await AsyncStorage.setItem('token', response.data.token);
       await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
+      showToast('success', isRegister ? 'Conta criada!' : 'Bem-vindo!', `Olá, ${response.data.user.name}`);
       onLogin(response.data.user);
     } catch (e) {
       setError(e.response?.data?.detail || e.message || 'Erro ao conectar');
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha na autenticação');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar style={theme === darkColors ? 'light' : 'dark'} />
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -135,57 +414,61 @@ const LoginScreen = ({ onLogin }) => {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Text style={styles.title}>TugaPark</Text>
-            <Text style={styles.subtitle}>Estacionamento inteligente</Text>
+            <Text style={[styles.title, { color: theme.primary }]}>TugaPark</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Estacionamento inteligente</Text>
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{isRegister ? 'Criar Conta' : 'Entrar'}</Text>
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>{isRegister ? 'Criar Conta' : 'Entrar'}</Text>
             
-            <Text style={styles.label}>Nome completo</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Nome completo</Text>
             <TextInput
-            style={styles.input}
-            placeholder="João Silva"
-            placeholderTextColor={colors.textMuted}
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-          />
+              style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              placeholder="João Silva"
+              placeholderTextColor={theme.textMuted}
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+            />
 
-          <Text style={styles.label}>Matrícula</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="AA-00-BB"
-            placeholderTextColor={colors.textMuted}
-            value={plate}
-            onChangeText={(t) => setPlate(t.toUpperCase())}
-            autoCapitalize="characters"
-          />
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Matrícula</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              placeholder="AA-00-BB"
+              placeholderTextColor={theme.textMuted}
+              value={plate}
+              onChangeText={(t) => setPlate(t.toUpperCase())}
+              autoCapitalize="characters"
+            />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.text} />
-            ) : (
-              <Text style={styles.buttonText}>
-                {isRegister ? 'Registar' : 'Entrar'}
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: theme.primary }, loading && styles.buttonDisabled]}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color={theme.secondary} />
+              ) : (
+                <Text style={[styles.buttonText, { color: theme.secondary }]}>
+                  {isRegister ? 'Registar' : 'Entrar'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.switchButton}
+              onPress={() => {
+                triggerHaptic('light');
+                setIsRegister(!isRegister);
+                setError('');
+              }}
+            >
+              <Text style={[styles.switchText, { color: theme.textSecondary }]}>
+                {isRegister ? 'Já tem conta? Entrar' : 'Não tem conta? Registar'}
               </Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => { setIsRegister(!isRegister); setError(''); }}
-          >
-            <Text style={styles.switchText}>
-              {isRegister ? 'Já tem conta? Entrar' : 'Não tem conta? Registar'}
-            </Text>
-          </TouchableOpacity>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -194,7 +477,7 @@ const LoginScreen = ({ onLogin }) => {
 };
 
 // Home Screen Component
-const HomeScreen = ({ user, onLogout }) => {
+const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometricsEnabled, setBiometricsEnabled }) => {
   const [spots, setSpots] = useState({});
   const [sessions, setSessions] = useState([]);
   const [reservations, setReservations] = useState([]);
@@ -207,6 +490,11 @@ const HomeScreen = ({ user, onLogout }) => {
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedSpot, setSelectedSpot] = useState(null);
   const [selectedDuration, setSelectedDuration] = useState(1);
+  
+  // Confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmSpot, setConfirmSpot] = useState(null);
   
   // Timer state for active sessions
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -330,36 +618,33 @@ const HomeScreen = ({ user, onLogout }) => {
         spot: selectedSpot, 
         duration_hours: selectedDuration 
       });
-      Alert.alert('Sucesso!', `Vaga ${selectedSpot} reservada por ${selectedDuration}h!`);
+      showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada por ${selectedDuration}h`);
       setShowReserveModal(false);
       setSelectedSpot(null);
       loadData();
     } catch (e) {
-      Alert.alert('Erro', e.response?.data?.detail || 'Falha ao reservar');
+      showToast('error', 'Erro na reserva', e.response?.data?.detail || 'Falha ao reservar');
     }
   };
 
   const handleCancelReservation = async (spotName) => {
-    Alert.alert(
-      'Cancelar Reserva',
-      `Deseja cancelar a reserva da vaga ${spotName}?`,
-      [
-        { text: 'Não', style: 'cancel' },
-        {
-          text: 'Sim, Cancelar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.delete(`/api/mobile/reservations/${spotName}`);
-              Alert.alert('Sucesso!', 'Reserva cancelada.');
-              loadData();
-            } catch (e) {
-              Alert.alert('Erro', e.response?.data?.detail || 'Falha ao cancelar');
-            }
-          },
-        },
-      ]
-    );
+    setConfirmSpot(spotName);
+    setConfirmAction('cancel');
+    setShowConfirmModal(true);
+  };
+  
+  const executeCancelReservation = async () => {
+    if (!confirmSpot) return;
+    try {
+      await api.delete(`/api/mobile/reservations/${confirmSpot}`);
+      showToast('success', 'Reserva cancelada', `Vaga ${confirmSpot} está agora disponível`);
+      loadData();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao cancelar');
+    } finally {
+      setShowConfirmModal(false);
+      setConfirmSpot(null);
+    }
   };
 
   const handlePay = async (sessionId, amount) => {
@@ -369,10 +654,10 @@ const HomeScreen = ({ user, onLogout }) => {
         amount: amount,
         method: 'card',
       });
-      Alert.alert('Sucesso!', 'Pagamento efetuado! Tem 15 min para sair.');
+      showToast('success', 'Pagamento efetuado!', 'Tem 15 minutos para sair do parque');
       loadData();
     } catch (e) {
-      Alert.alert('Erro', e.response?.data?.detail || 'Falha ao pagar');
+      showToast('error', 'Erro no pagamento', e.response?.data?.detail || 'Falha ao processar pagamento');
     }
   };
 
@@ -380,39 +665,65 @@ const HomeScreen = ({ user, onLogout }) => {
   const freeSpots = spotsList.filter(s => !s.occupied && !s.reserved);
   const occupiedSpots = spotsList.filter(s => s.occupied);
 
+  // Skeleton Loading State
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>A carregar...</Text>
-      </View>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+        <View style={[styles.homeHeader, { backgroundColor: theme.surface }]}>
+          <View>
+            <SkeletonBox width={120} height={24} style={{ marginBottom: 8 }} />
+            <SkeletonBox width={80} height={16} />
+          </View>
+          <SkeletonBox width={40} height={20} />
+        </View>
+        <View style={[styles.tabs, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+          <SkeletonBox width={80} height={36} style={{ marginHorizontal: 8 }} />
+          <SkeletonBox width={80} height={36} style={{ marginHorizontal: 8 }} />
+          <SkeletonBox width={80} height={36} style={{ marginHorizontal: 8 }} />
+        </View>
+        <View style={styles.content}>
+          <SkeletonBox width={150} height={24} style={{ marginBottom: 16 }} />
+          <View style={[styles.statsRow, { marginBottom: 24 }]}>
+            <View style={{ flex: 1, marginRight: 6 }}>
+              <SkeletonBox width="100%" height={80} borderRadius={12} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 6 }}>
+              <SkeletonBox width="100%" height={80} borderRadius={12} />
+            </View>
+          </View>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar style={isDarkMode ? 'light' : 'dark'} />
       
       {/* Header */}
-      <View style={styles.homeHeader}>
+      <View style={[styles.homeHeader, { backgroundColor: theme.surface }]}>
         <View>
-          <Text style={styles.greeting}>Olá, {user?.name?.split(' ')[0]}!</Text>
-          <Text style={styles.plate}>{user?.plate}</Text>
+          <Text style={[styles.greeting, { color: theme.text }]}>Olá, {user?.name?.split(' ')[0]}!</Text>
+          <Text style={[styles.plate, { color: theme.primary }]}>{user?.plate}</Text>
         </View>
-        <TouchableOpacity onPress={onLogout}>
-          <Text style={styles.logoutText}>Sair</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         {['home', 'spots', 'settings'].map((tab) => (
           <TouchableOpacity
             key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
+            style={[styles.tab, activeTab === tab && { backgroundColor: theme.primary }]}
+            onPress={() => {
+              triggerHaptic('light');
+              setActiveTab(tab);
+            }}
           >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+            <Text style={[styles.tabText, { color: theme.textSecondary }, activeTab === tab && { color: theme.secondary, fontWeight: '600' }]}>
               {tab === 'home' ? 'Início' : tab === 'spots' ? 'Vagas' : 'Definições'}
             </Text>
           </TouchableOpacity>
@@ -429,8 +740,8 @@ const HomeScreen = ({ user, onLogout }) => {
               await loadData();
               setRefreshing(false);
             }}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
           />
         }
       >
@@ -442,6 +753,7 @@ const HomeScreen = ({ user, onLogout }) => {
                 {alerts.map((alert, i) => (
                   <View key={i} style={[
                     styles.alertCard,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
                     alert.type === 'warning' && styles.alertWarning,
                     alert.type === 'danger' && styles.alertDanger,
                     alert.type === 'info' && styles.alertInfo,
@@ -452,8 +764,8 @@ const HomeScreen = ({ user, onLogout }) => {
                       {alert.icon === 'payment' && <PaymentIcon size={24} color="#fff" />}
                     </View>
                     <View style={styles.alertContent}>
-                      <Text style={styles.alertTitle}>{alert.title}</Text>
-                      <Text style={styles.alertMessage}>{alert.message}</Text>
+                      <Text style={[styles.alertTitle, { color: theme.text }]}>{alert.title}</Text>
+                      <Text style={[styles.alertMessage, { color: theme.textSecondary }]}>{alert.message}</Text>
                     </View>
                   </View>
                 ))}
@@ -463,26 +775,26 @@ const HomeScreen = ({ user, onLogout }) => {
             {/* Active Session Timer */}
             {sessions.filter(s => s.status === 'open').length > 0 && (
               <View style={styles.activeSessionSection}>
-                <Text style={styles.sectionTitle}>Sessão Ativa</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessão Ativa</Text>
                 {sessions.filter(s => s.status === 'open').slice(0, 1).map((session, i) => (
-                  <View key={i} style={styles.timerCard}>
+                  <View key={i} style={[styles.timerCard, { backgroundColor: theme.primary }]}>
                     <View style={styles.timerHeader}>
-                      <Text style={styles.timerSpot}>
+                      <Text style={[styles.timerSpot, { color: theme.secondary }]}>
                         {session.spot ? `Vaga ${session.spot}` : 'Estacionado'}
                       </Text>
-                      <View style={styles.timerBadge}>
-                        <Text style={styles.timerBadgeText}>EM CURSO</Text>
+                      <View style={[styles.timerBadge, { backgroundColor: theme.secondary }]}>
+                        <Text style={[styles.timerBadgeText, { color: theme.primary }]}>EM CURSO</Text>
                       </View>
                     </View>
                     <View style={styles.timerDisplay}>
-                      <Text style={styles.timerTime}>
+                      <Text style={[styles.timerTime, { color: theme.secondary }]}>
                         {getElapsedTime(session.entry_time)}
                       </Text>
-                      <Text style={styles.timerCost}>
+                      <Text style={[styles.timerCost, { color: theme.secondary }]}>
                         €{getCurrentCost(session.entry_time)}
                       </Text>
                     </View>
-                    <Text style={styles.timerEntry}>
+                    <Text style={[styles.timerEntry, { color: theme.secondary }]}>
                       Entrada: {new Date(session.entry_time).toLocaleTimeString('pt-PT')}
                     </Text>
                   </View>
@@ -493,18 +805,21 @@ const HomeScreen = ({ user, onLogout }) => {
             {/* Pending Sessions */}
             {sessions.filter(s => s.status === 'open').length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Sessões a Pagar</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessões a Pagar</Text>
                 {sessions.filter(s => s.status === 'open').map((session, i) => (
-                  <View key={i} style={styles.card}>
-                    <Text style={styles.cardTitle}>
+                  <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.cardTitle, { color: theme.text }]}>
                       {session.spot ? `Vaga ${session.spot}` : 'Em curso'}
                     </Text>
-                    <Text style={styles.cardText}>€{getCurrentCost(session.entry_time)}</Text>
+                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>€{getCurrentCost(session.entry_time)}</Text>
                     <TouchableOpacity
-                      style={styles.smallButton}
-                      onPress={() => handlePay(session.id, parseFloat(getCurrentCost(session.entry_time)))}
+                      style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                      onPress={() => {
+                        triggerHaptic('medium');
+                        handlePay(session.id, parseFloat(getCurrentCost(session.entry_time)));
+                      }}
                     >
-                      <Text style={styles.buttonText}>Pagar</Text>
+                      <Text style={[styles.buttonText, { color: theme.secondary }]}>Pagar</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -513,37 +828,40 @@ const HomeScreen = ({ user, onLogout }) => {
             
             {/* Stats */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Estacionamentos</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Estacionamentos</Text>
               <View style={styles.statsRow}>
-              <View style={[styles.statCardFree]}>
-                <Text style={styles.statNumber}>{freeSpots.length}</Text>
-                <Text style={styles.statLabel}>Livres</Text>
+                <View style={[styles.statCardFree, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
+                  <Text style={[styles.statNumber, { color: theme.text }]}>{freeSpots.length}</Text>
+                  <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Livres</Text>
+                </View>
+                <View style={[styles.statCardOccupied, { backgroundColor: theme.surface, borderColor: theme.danger }]}>
+                  <Text style={[styles.statNumber, { color: theme.text }]}>{occupiedSpots.length}</Text>
+                  <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Ocupados</Text>
+                </View>
               </View>
-              <View style={[styles.statCardOccupied]}>
-                <Text style={styles.statNumber}>{occupiedSpots.length}</Text>
-                <Text style={styles.statLabel}>Ocupados</Text>
-              </View>
-            </View>
             </View>
             
 
             {/* Reservations */}
             {reservations.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Minhas Reservas</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Minhas Reservas</Text>
                 {reservations.map((res, i) => (
-                  <View key={i} style={styles.reservationCard}>
+                  <View key={i} style={[styles.reservationCard, { backgroundColor: theme.surface, borderColor: theme.warning }]}>
                     <View>
-                      <Text style={styles.cardTitle}>Vaga {res.spot}</Text>
-                      <Text style={styles.cardText}>
+                      <Text style={[styles.cardTitle, { color: theme.text }]}>Vaga {res.spot}</Text>
+                      <Text style={[styles.cardText, { color: theme.textSecondary }]}>
                         Expira: {new Date(res.expires_at * 1000).toLocaleString('pt-PT')}
                       </Text>
                     </View>
                     <TouchableOpacity
-                      style={styles.cancelButton}
-                      onPress={() => handleCancelReservation(res.spot)}
+                      style={[styles.cancelButton, { backgroundColor: theme.danger }]}
+                      onPress={() => {
+                        triggerHaptic('medium');
+                        handleCancelReservation(res.spot);
+                      }}
                     >
-                      <Text style={styles.cancelButtonText}>Cancelar</Text>
+                      <Text style={[styles.cancelButtonText, { color: theme.textInverse }]}>Cancelar</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -552,28 +870,33 @@ const HomeScreen = ({ user, onLogout }) => {
             
             {/* Session History */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Histórico</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Histórico</Text>
               {sessions.filter(s => s.status !== 'open').length === 0 ? (
-                <Text style={styles.emptyText}>Nenhuma sessão anterior</Text>
+                <EmptyState 
+                  icon={HistoryIcon}
+                  title="Sem histórico"
+                  subtitle="As suas sessões anteriores aparecerão aqui"
+                  theme={theme}
+                />
               ) : (
                 sessions.filter(s => s.status !== 'open').slice(0, 5).map((session, i) => (
-                  <View key={i} style={styles.card}>
+                  <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <View style={styles.sessionHeader}>
-                      <Text style={styles.cardTitle}>
+                      <Text style={[styles.cardTitle, { color: theme.text }]}>
                         {session.spot ? `Vaga ${session.spot}` : 'Sessão'}
                       </Text>
                       <Text style={[
                         styles.sessionStatus,
-                        { color: session.status === 'paid' ? colors.success : colors.warning }
+                        { color: session.status === 'paid' ? theme.success : theme.warning }
                       ]}>
                         {session.status === 'paid' ? 'Pago' : 'Terminada'}
                       </Text>
                     </View>
-                    <Text style={styles.cardText}>
+                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
                       {new Date(session.entry_time).toLocaleString('pt-PT')}
                     </Text>
                     {session.amount_paid > 0 && (
-                      <Text style={styles.amount}>€{session.amount_paid.toFixed(2)}</Text>
+                      <Text style={[styles.amount, { color: theme.primary }]}>€{session.amount_paid.toFixed(2)}</Text>
                     )}
                   </View>
                 ))
@@ -584,57 +907,94 @@ const HomeScreen = ({ user, onLogout }) => {
 
         {activeTab === 'spots' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Vagas Disponíveis</Text>
-            {spotsList.map((spot, i) => (
-              <View key={i} style={styles.spotCard}>
-                <View>
-                  <Text style={styles.spotName}>{spot.name}</Text>
-                  <Text style={[
-                    styles.spotStatus,
-                    { color: spot.occupied ? colors.danger : spot.reserved ? colors.warning : colors.success }
-                  ]}>
-                    {spot.occupied ? 'Ocupado' : spot.reserved ? 'Reservado' : 'Livre'}
-                  </Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Vagas Disponíveis</Text>
+            {spotsList.length === 0 ? (
+              <EmptyState 
+                icon={ParkingIcon}
+                title="Sem vagas"
+                subtitle="Nenhuma vaga disponível no momento"
+                theme={theme}
+              />
+            ) : (
+              spotsList.map((spot, i) => (
+                <View key={i} style={[styles.spotCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View>
+                    <Text style={[styles.spotName, { color: theme.text }]}>{spot.name}</Text>
+                    <Text style={[
+                      styles.spotStatus,
+                      { color: spot.occupied ? theme.danger : spot.reserved ? theme.warning : theme.success }
+                    ]}>
+                      {spot.occupied ? 'Ocupado' : spot.reserved ? 'Reservado' : 'Livre'}
+                    </Text>
+                  </View>
+                  {!spot.occupied && !spot.reserved && (
+                    <TouchableOpacity
+                      style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                      onPress={() => {
+                        triggerHaptic('medium');
+                        openReserveModal(spot.name);
+                      }}
+                    >
+                      <Text style={[styles.buttonText, { color: theme.secondary }]}>Reservar</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                {!spot.occupied && !spot.reserved && (
-                  <TouchableOpacity
-                    style={styles.smallButton}
-                    onPress={() => openReserveModal(spot.name)}
-                  >
-                    <Text style={styles.buttonText}>Reservar</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+              ))
+            )}
           </View>
         )}
 
         {activeTab === 'settings' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Definições</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Definições</Text>
             
             {/* User Info */}
-            <View style={styles.settingsCard}>
-              <Text style={styles.settingsLabel}>Nome</Text>
-              <Text style={styles.settingsValue}>{user?.name}</Text>
+            <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Nome</Text>
+              <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.name}</Text>
             </View>
             
-            <View style={styles.settingsCard}>
-              <Text style={styles.settingsLabel}>Matrícula</Text>
-              <Text style={styles.settingsValue}>{user?.plate}</Text>
+            <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Matrícula</Text>
+              <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.plate}</Text>
             </View>
             
-            <View style={styles.settingsCard}>
-              <Text style={styles.settingsLabel}>Tarifa</Text>
-              <Text style={styles.settingsValue}>€{parkingRate.toFixed(2)}/hora</Text>
+            <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Tarifa</Text>
+              <Text style={[styles.settingsValue, { color: theme.text }]}>€{parkingRate.toFixed(2)}/hora</Text>
+            </View>
+            
+            {/* Dark Mode Toggle */}
+            <View style={[styles.settingsCard, styles.settingsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={styles.settingsRowLeft}>
+                <MoonIcon size={24} color={theme.textSecondary} />
+                <View style={{ marginLeft: 12 }}>
+                  <Text style={[styles.settingsValue, { color: theme.text }]}>Modo Escuro</Text>
+                  <Text style={[styles.settingsLabel, { color: theme.textSecondary, marginTop: 2 }]}>
+                    {isDarkMode ? 'Ativado' : 'Desativado'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={isDarkMode}
+                onValueChange={(value) => {
+                  triggerHaptic('light');
+                  setIsDarkMode(value);
+                }}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor={isDarkMode ? theme.secondary : '#f4f3f4'}
+              />
             </View>
             
             {/* Logout Button */}
             <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={onLogout}
+              style={[styles.logoutButton, { backgroundColor: theme.danger }]}
+              onPress={() => {
+                triggerHaptic('medium');
+                onLogout();
+              }}
             >
-              <Text style={styles.logoutButtonText}>Terminar Sessão</Text>
+              <Text style={[styles.logoutButtonText, { color: theme.textInverse }]}>Terminar Sessão</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -648,9 +1008,9 @@ const HomeScreen = ({ user, onLogout }) => {
         onRequestClose={() => setShowReserveModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Reservar {selectedSpot}</Text>
-            <Text style={styles.modalSubtitle}>Selecione a duração</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Reservar {selectedSpot}</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Selecione a duração</Text>
             
             <View style={styles.durationGrid}>
               {durationOptions.map((hours) => (
@@ -658,13 +1018,18 @@ const HomeScreen = ({ user, onLogout }) => {
                   key={hours}
                   style={[
                     styles.durationButton,
-                    selectedDuration === hours && styles.durationButtonActive
+                    { borderColor: theme.border, backgroundColor: theme.background },
+                    selectedDuration === hours && { borderColor: theme.primary, backgroundColor: theme.primary }
                   ]}
-                  onPress={() => setSelectedDuration(hours)}
+                  onPress={() => {
+                    triggerHaptic('light');
+                    setSelectedDuration(hours);
+                  }}
                 >
                   <Text style={[
                     styles.durationButtonText,
-                    selectedDuration === hours && styles.durationButtonTextActive
+                    { color: theme.text },
+                    selectedDuration === hours && { color: theme.secondary }
                   ]}>
                     {hours}h
                   </Text>
@@ -674,21 +1039,43 @@ const HomeScreen = ({ user, onLogout }) => {
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowReserveModal(false)}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.background, borderColor: theme.border }]}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setShowReserveModal(false);
+                }}
               >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
+                <Text style={[styles.modalCancelText, { color: theme.text }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={handleReserve}
+                style={[styles.modalConfirmBtn, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  triggerHaptic('medium');
+                  handleReserve();
+                }}
               >
-                <Text style={styles.buttonText}>Reservar</Text>
+                <Text style={[styles.buttonText, { color: theme.secondary }]}>Reservar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+      
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        visible={showConfirmModal}
+        title="Cancelar Reserva"
+        message={`Deseja cancelar a reserva da vaga ${confirmSpot}?`}
+        confirmText="Sim, Cancelar"
+        cancelText="Não"
+        onConfirm={executeCancelReservation}
+        onCancel={() => {
+          setShowConfirmModal(false);
+          setConfirmSpot(null);
+        }}
+        theme={theme}
+        isDanger={true}
+      />
     </SafeAreaView>
   );
 };
@@ -697,17 +1084,91 @@ const HomeScreen = ({ user, onLogout }) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  
+  // Get current theme
+  const theme = isDarkMode ? darkColors : lightColors;
+  colors = theme; // Update global colors for skeleton
 
   useEffect(() => {
-    checkAuth();
+    loadSettings();
   }, []);
+  
+  // Persist dark mode setting (only after initial load)
+  useEffect(() => {
+    if (settingsLoaded) {
+      AsyncStorage.setItem('isDarkMode', JSON.stringify(isDarkMode));
+    }
+  }, [isDarkMode, settingsLoaded]);
+  
+  // Persist biometrics setting (only after initial load)
+  useEffect(() => {
+    if (settingsLoaded) {
+      AsyncStorage.setItem('biometricsEnabled', JSON.stringify(biometricsEnabled));
+    }
+  }, [biometricsEnabled, settingsLoaded]);
+
+  const loadSettings = async () => {
+    try {
+      // Load dark mode setting
+      const darkModeSetting = await AsyncStorage.getItem('isDarkMode');
+      if (darkModeSetting !== null) {
+        setIsDarkMode(JSON.parse(darkModeSetting));
+      }
+      
+      // Load biometrics setting
+      const biometricsSetting = await AsyncStorage.getItem('biometricsEnabled');
+      if (biometricsSetting !== null) {
+        setBiometricsEnabled(JSON.parse(biometricsSetting));
+      }
+    } catch (e) {
+      console.log('Settings load error:', e);
+    } finally {
+      setSettingsLoaded(true);
+    }
+  };
 
   const checkAuth = async () => {
     try {
       const storedUser = await AsyncStorage.getItem('user');
       const token = await AsyncStorage.getItem('token');
+      
       if (storedUser && token) {
-        setUser(JSON.parse(storedUser));
+        // Check if biometrics is enabled
+        const biometricsSetting = await AsyncStorage.getItem('biometricsEnabled');
+        const biometricsOn = biometricsSetting ? JSON.parse(biometricsSetting) : false;
+        
+        if (biometricsOn) {
+          // Check if device supports biometrics
+          const compatible = await LocalAuthentication.hasHardwareAsync();
+          const enrolled = await LocalAuthentication.isEnrolledAsync();
+          
+          if (compatible && enrolled) {
+            const result = await LocalAuthentication.authenticateAsync({
+              promptMessage: 'Autenticar com biometria',
+              cancelLabel: 'Usar senha',
+              fallbackLabel: 'Usar senha',
+              disableDeviceFallback: false,
+            });
+            
+            if (result.success) {
+              setUser(JSON.parse(storedUser));
+              showToast('success', 'Bem-vindo!', 'Autenticação biométrica bem-sucedida');
+            } else {
+              // Biometric failed, show login screen
+              showToast('info', 'Biometria cancelada', 'Por favor, faça login manualmente');
+            }
+          } else {
+            // No biometrics available, auto-login
+            setUser(JSON.parse(storedUser));
+          }
+        } else {
+          // Biometrics disabled, auto-login
+          setUser(JSON.parse(storedUser));
+        }
       }
     } catch (e) {
       console.log('Auth check error:', e);
@@ -720,29 +1181,52 @@ export default function App() {
     await AsyncStorage.removeItem('token');
     await AsyncStorage.removeItem('user');
     setUser(null);
+    showToast('info', 'Sessão terminada', 'Até breve!');
+  };
+  
+  const handleSplashFinish = () => {
+    setShowSplash(false);
+    checkAuth();
   };
 
-  if (loading) {
+  // Esperar settings carregarem antes de mostrar splash com tema correto
+  if (!settingsLoaded) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.logo}>🚗</Text>
-        <Text style={styles.title}>TugaPark</Text>
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+      <View style={[styles.container, styles.centered, { backgroundColor: '#121212' }]}>
+        <ActivityIndicator color="#97d700" size="small" />
       </View>
     );
   }
 
-  return user ? (
-    <HomeScreen user={user} onLogout={handleLogout} />
-  ) : (
-    <LoginScreen onLogin={setUser} />
+  // Show splash screen with correct theme
+  if (showSplash || loading) {
+    return <SplashScreen onFinish={handleSplashFinish} theme={theme} />;
+  }
+
+  return (
+    <>
+      {user ? (
+        <HomeScreen 
+          user={user} 
+          onLogout={handleLogout} 
+          theme={theme}
+          isDarkMode={isDarkMode}
+          setIsDarkMode={setIsDarkMode}
+          biometricsEnabled={biometricsEnabled}
+          setBiometricsEnabled={setBiometricsEnabled}
+        />
+      ) : (
+        <LoginScreen onLogin={setUser} theme={theme} />
+      )}
+      <Toast />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: lightColors.background,
   },
   centered: {
     justifyContent: 'center',
@@ -764,54 +1248,54 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: colors.text,
+    color: lightColors.text,
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     marginTop: 4,
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.text,
+    color: lightColors.text,
     marginBottom: 4,
   },
   cardText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
   },
   label: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     marginBottom: 4,
     marginTop: 12,
   },
   input: {
-    backgroundColor: colors.background,
+    backgroundColor: lightColors.background,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: colors.text,
+    color: lightColors.text,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
   },
   error: {
-    color: colors.danger,
+    color: lightColors.danger,
     fontSize: 14,
     marginTop: 12,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: colors.primary,
+    backgroundColor: lightColors.primary,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -821,7 +1305,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: colors.secondary,
+    color: lightColors.secondary,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -830,7 +1314,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchText: {
-    color: colors.secondary,
+    color: lightColors.secondary,
     fontSize: 14,
   },
   homeHeader: {
@@ -839,29 +1323,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     paddingTop: 30,
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
   },
   greeting: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
+    color: lightColors.text,
   },
   plate: {
     fontSize: 14,
-    color: colors.primary,
+    color: lightColors.primary,
     marginTop: 2,
   },
   logoutText: {
-    color: colors.danger,
+    color: lightColors.danger,
     fontSize: 14,
   },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     paddingHorizontal: 8,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: lightColors.border,
   },
   tab: {
     flex: 1,
@@ -870,14 +1354,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   tabActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: lightColors.primary,
   },
   tabText: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
   },
   tabTextActive: {
-    color: colors.text,
+    color: lightColors.text,
     fontWeight: '600',
   },
   content: {
@@ -891,30 +1375,30 @@ const styles = StyleSheet.create({
   },
   statCardFree: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    borderColor: colors.primary,
+    borderColor: lightColors.primary,
     borderWidth: 1,
   },
   statCardOccupied: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    borderColor: colors.danger,
+    borderColor: lightColors.danger,
     borderWidth: 1,
   },
   statNumber: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: colors.text,
+    color: lightColors.text,
   },
   statLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     marginTop: 4,
   },
   section: {
@@ -923,11 +1407,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
+    color: lightColors.text,
     marginBottom: 12,
   },
   spotCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -935,19 +1419,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
   },
   spotName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.text,
+    color: lightColors.text,
   },
   spotStatus: {
     fontSize: 14,
     marginTop: 4,
   },
   smallButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: lightColors.primary,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -965,21 +1449,21 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: lightColors.primary,
     marginTop: 8,
   },
   emptyText: {
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     textAlign: 'center',
     padding: 32,
   },
   loadingText: {
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     marginTop: 16,
   },
   // Reservation card
   reservationCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -987,47 +1471,57 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.warning,
+    borderColor: lightColors.warning,
   },
   cancelButton: {
-    backgroundColor: colors.danger,
+    backgroundColor: lightColors.danger,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   cancelButtonText: {
-    color: colors.textInverse,
+    color: lightColors.textInverse,
     fontSize: 12,
     fontWeight: '600',
   },
   // Settings styles
   settingsCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
   },
   settingsLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     marginBottom: 4,
   },
   settingsValue: {
     fontSize: 16,
-    color: colors.text,
+    color: lightColors.text,
     fontWeight: '500',
   },
+  settingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settingsRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   logoutButton: {
-    backgroundColor: colors.danger,
+    backgroundColor: lightColors.danger,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginTop: 24,
   },
   logoutButtonText: {
-    color: colors.textInverse,
+    color: lightColors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -1038,7 +1532,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1046,12 +1540,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
+    color: lightColors.text,
     textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     textAlign: 'center',
     marginTop: 4,
     marginBottom: 20,
@@ -1068,22 +1562,22 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: lightColors.background,
   },
   durationButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
+    borderColor: lightColors.primary,
+    backgroundColor: lightColors.primary,
   },
   durationButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: lightColors.text,
   },
   durationButtonTextActive: {
-    color: colors.secondary,
+    color: lightColors.secondary,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -1094,12 +1588,12 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: lightColors.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
   },
   modalCancelText: {
-    color: colors.text,
+    color: lightColors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -1108,7 +1602,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: lightColors.primary,
   },
   // Alert styles
   alertsSection: {
@@ -1120,9 +1614,9 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     marginBottom: 8,
-    backgroundColor: colors.surface,
+    backgroundColor: lightColors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: lightColors.border,
   },
   alertWarning: {
     backgroundColor: '#fef3c7',
@@ -1151,11 +1645,11 @@ const styles = StyleSheet.create({
   alertTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text,
+    color: lightColors.text,
   },
   alertMessage: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: lightColors.textSecondary,
     marginTop: 2,
   },
   // Timer styles
@@ -1163,7 +1657,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   timerCard: {
-    backgroundColor: colors.primary,
+    backgroundColor: lightColors.primary,
     borderRadius: 16,
     padding: 20,
     marginTop: 8,
@@ -1177,16 +1671,16 @@ const styles = StyleSheet.create({
   timerSpot: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.secondary,
+    color: lightColors.secondary,
   },
   timerBadge: {
-    backgroundColor: colors.secondary,
+    backgroundColor: lightColors.secondary,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   timerBadgeText: {
-    color: colors.primary,
+    color: lightColors.primary,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -1198,17 +1692,96 @@ const styles = StyleSheet.create({
   timerTime: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: colors.secondary,
+    color: lightColors.secondary,
   },
   timerCost: {
     fontSize: 24,
     fontWeight: '600',
-    color: colors.secondary,
+    color: lightColors.secondary,
   },
   timerEntry: {
     fontSize: 12,
-    color: colors.secondary,
+    color: lightColors.secondary,
     marginTop: 8,
     opacity: 0.7,
+  },
+  // Empty State styles
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  // Splash Screen styles
+  splashContainer: {
+    flex: 1,
+  },
+  splashGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashEmoji: {
+    fontSize: 80,
+    marginBottom: 16,
+  },
+  splashTitle: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#97d700',
+  },
+  splashSubtitle: {
+    fontSize: 16,
+    color: '#a0a0a0',
+    marginTop: 8,
+  },
+  // Confirmation Modal styles
+  confirmModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmModalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 24,
+  },
+  confirmModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  confirmModalMessage: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  confirmModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  confirmModalBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmModalBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
