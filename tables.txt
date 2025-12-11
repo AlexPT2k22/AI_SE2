@@ -1,8 +1,19 @@
+-- =====================================================
+-- TABELAS DO SISTEMA DE ESTACIONAMENTO
+-- Sistema: 3 ESP32-CAM (entrada, centro, saída)
+-- Fluxo: Entrada → Estacionamento → Pagamento → Saída
+-- =====================================================
+
+-- ⚠️ DROP ALL TABLES (começar do zero)
+-- Ordem: tabelas filhas primeiro (por causa das foreign keys)
+DROP TABLE IF EXISTS public.parking_payments CASCADE;
+DROP TABLE IF EXISTS public.parking_sessions CASCADE;
+DROP TABLE IF EXISTS public.parking_manual_reservations CASCADE;
+DROP TABLE IF EXISTS public.parking_web_users CASCADE;
+DROP TABLE IF EXISTS public.parking_event_log CASCADE;
+
 -- public.parking_event_log definição
-
--- Drop table
-
--- DROP TABLE parking_event_log;
+-- Regista TODOS os eventos de detecção de matrículas (entrada/saída/centro)
 
 CREATE TABLE parking_event_log (
 	id serial4 NOT NULL,
@@ -15,13 +26,13 @@ CREATE TABLE parking_event_log (
 	created_at timestamptz DEFAULT now() NOT NULL,
 	CONSTRAINT parking_event_log_pkey PRIMARY KEY (id)
 );
+CREATE INDEX idx_event_log_camera ON parking_event_log(camera_id);
+CREATE INDEX idx_event_log_created ON parking_event_log(created_at DESC);
 
 
 -- public.parking_manual_reservations definição
-
--- Drop table
-
--- DROP TABLE parking_manual_reservations;
+-- Reservas de vagas específicas (ex: spot01, spot02)
+-- Uma vaga só pode ter UMA reserva ativa (UNIQUE spot)
 
 CREATE TABLE parking_manual_reservations (
 	id int4 GENERATED ALWAYS AS IDENTITY( INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START 1 CACHE 1 NO CYCLE) NOT NULL,
@@ -34,36 +45,55 @@ CREATE TABLE parking_manual_reservations (
 	CONSTRAINT parking_manual_reservations_pkey PRIMARY KEY (id),
 	CONSTRAINT parking_manual_reservations_spot_key UNIQUE (spot)
 );
+CREATE INDEX idx_reservations_plate_norm ON parking_manual_reservations(plate_norm);
+CREATE INDEX idx_reservations_reserved_until ON parking_manual_reservations(reserved_until);
+
+COMMENT ON COLUMN parking_manual_reservations.spot IS 'ID da vaga reservada (ex: A1, B3, C12)';
+COMMENT ON COLUMN parking_manual_reservations.plate_norm IS 'Matrícula normalizada (sem espaços, hífens, maiúsculas)';
+COMMENT ON COLUMN parking_manual_reservations.reserved_until IS 'Data/hora até quando a reserva é válida';
 
 
 -- public.parking_sessions definição
-
--- Drop table
-
--- DROP TABLE parking_sessions;
+-- SESSÃO COMPLETA: Entrada → Estacionamento → Pagamento → Saída
 
 CREATE TABLE parking_sessions (
 	id serial4 NOT NULL,
 	plate text NOT NULL,
+	plate_norm text NULL,  -- ✅ Matrícula normalizada para comparações
 	plate_country text NULL,
 	entry_time timestamptz DEFAULT now() NOT NULL,
 	exit_time timestamptz NULL,
 	camera_id text NULL,
 	ticket_id text NULL,
+	spot text NULL,  -- ✅ Vaga onde estacionou (ex: spot01, spot02, NULL se ainda não estacionou)
 	amount_due numeric(10, 2) NULL,
 	amount_paid numeric(10, 2) DEFAULT 0 NULL,
-	status text DEFAULT 'open'::text NOT NULL,
+	payment_deadline timestamptz NULL,  -- ✅ Prazo de 10min após pagamento para sair
+	status text DEFAULT 'open'::text NOT NULL,  -- 'open', 'closed', 'payment_pending', 'fine_pending'
 	notes text NULL,
+	entry_image_url text NULL,  -- ✅ URL da imagem capturada na entrada
+	exit_image_url text NULL,   -- ✅ URL da imagem capturada na saída
 	CONSTRAINT parking_sessions_pkey PRIMARY KEY (id),
 	CONSTRAINT parking_sessions_ticket_id_key UNIQUE (ticket_id)
 );
 
+-- Índices para performance
+CREATE INDEX idx_parking_sessions_spot ON parking_sessions(spot);
+CREATE INDEX idx_parking_sessions_plate_norm ON parking_sessions(plate_norm);
+CREATE INDEX idx_parking_sessions_status ON parking_sessions(status);
+CREATE INDEX idx_parking_sessions_status_spot ON parking_sessions(status, spot);
+CREATE INDEX idx_parking_sessions_payment_deadline ON parking_sessions(payment_deadline);
+CREATE INDEX idx_parking_sessions_entry_time ON parking_sessions(entry_time DESC);
+
+COMMENT ON COLUMN parking_sessions.spot IS 'ID da vaga onde o carro estacionou (atribuído pela CV central)';
+COMMENT ON COLUMN parking_sessions.plate_norm IS 'Matrícula normalizada (UPPER, sem hífens/espaços)';
+COMMENT ON COLUMN parking_sessions.payment_deadline IS 'Prazo limite para sair após pagar (10 minutos)';
+COMMENT ON COLUMN parking_sessions.status IS 'open = ativo | closed = saiu | payment_pending = aguardando pagamento | fine_pending = multa por reserva não usada';
+COMMENT ON COLUMN parking_sessions.entry_image_url IS 'URL da imagem capturada na entrada (Supabase Storage)';
+
 
 -- public.parking_web_users definição
-
--- Drop table
-
--- DROP TABLE parking_web_users;
+-- Utilizadores registados no sistema web
 
 CREATE TABLE parking_web_users (
 	id int4 GENERATED ALWAYS AS IDENTITY( INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START 1 CACHE 1 NO CYCLE) NOT NULL,
@@ -75,22 +105,55 @@ CREATE TABLE parking_web_users (
 	CONSTRAINT parking_web_users_pkey PRIMARY KEY (id),
 	CONSTRAINT parking_web_users_plate_norm_key UNIQUE (plate_norm)
 );
+CREATE INDEX idx_web_users_user_type ON parking_web_users(user_type);
 
 
 -- public.parking_payments definição
-
--- Drop table
-
--- DROP TABLE parking_payments;
+-- Pagamentos efetuados (fictícios)
+-- Relacionado com parking_sessions
 
 CREATE TABLE parking_payments (
 	id serial4 NOT NULL,
 	session_id int4 NOT NULL,
 	amount numeric(10, 2) NOT NULL,
-	"method" text NOT NULL,
+	"method" text NOT NULL,  -- 'ficticio', 'mbway', 'card', etc
 	reference text NULL,
 	paid_at timestamptz DEFAULT now() NOT NULL,
 	metadata jsonb NULL,
 	CONSTRAINT parking_payments_pkey PRIMARY KEY (id),
 	CONSTRAINT parking_payments_session_id_fkey FOREIGN KEY (session_id) REFERENCES parking_sessions(id) ON DELETE CASCADE
 );
+CREATE INDEX idx_payments_session_id ON parking_payments(session_id);
+CREATE INDEX idx_payments_paid_at ON parking_payments(paid_at DESC);
+
+
+-- =====================================================
+-- MIGRATION SCRIPT (Aplicar se tabelas já existirem)
+-- =====================================================
+-- Execute este código se as tabelas JÁ EXISTEM e quer adicionar os campos novos:
+
+-- Adicionar colunas novas em parking_sessions
+ALTER TABLE public.parking_sessions 
+ADD COLUMN IF NOT EXISTS spot TEXT NULL,
+ADD COLUMN IF NOT EXISTS plate_norm TEXT NULL,
+ADD COLUMN IF NOT EXISTS payment_deadline TIMESTAMPTZ NULL,
+ADD COLUMN IF NOT EXISTS entry_image_url TEXT NULL,
+ADD COLUMN IF NOT EXISTS exit_image_url TEXT NULL;
+
+-- Criar índices novos
+CREATE INDEX IF NOT EXISTS idx_parking_sessions_spot ON parking_sessions(spot);
+CREATE INDEX IF NOT EXISTS idx_parking_sessions_plate_norm ON parking_sessions(plate_norm);
+CREATE INDEX IF NOT EXISTS idx_parking_sessions_status_spot ON parking_sessions(status, spot);
+CREATE INDEX IF NOT EXISTS idx_parking_sessions_payment_deadline ON parking_sessions(payment_deadline);
+
+-- Atualizar registos existentes com plate_norm (normalizar matrículas antigas)
+UPDATE public.parking_sessions 
+SET plate_norm = UPPER(REPLACE(REPLACE(REPLACE(plate, '-', ''), ' ', ''), '.', ''))
+WHERE plate_norm IS NULL AND plate IS NOT NULL;
+
+-- Comentários
+COMMENT ON COLUMN public.parking_sessions.spot IS 'ID da vaga onde o carro estacionou (ex: spot01, spot02)';
+COMMENT ON COLUMN public.parking_sessions.plate_norm IS 'Matrícula normalizada para comparações';
+COMMENT ON COLUMN public.parking_sessions.payment_deadline IS 'Prazo de 10min após pagamento para sair';
+COMMENT ON COLUMN public.parking_sessions.entry_image_url IS 'URL da imagem capturada na entrada';
+COMMENT ON COLUMN public.parking_sessions.exit_image_url IS 'URL da imagem capturada na saída';
