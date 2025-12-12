@@ -45,6 +45,13 @@ try:
 except ImportError:
     SupabaseStorageService = None
 
+# Novo módulo de autenticação v2.0
+try:
+    from auth_routes import router as auth_router, set_db_pool as set_auth_db_pool
+except ImportError:
+    auth_router = None
+    set_auth_db_pool = None
+
 
 # ------------------------------------------------------------
 # CONFIG
@@ -108,6 +115,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Registar router de autenticação v2.0
+if auth_router:
+    app.include_router(auth_router)
+    print("[INFO] Router de autenticação v2.0 registado.")
 
 # JWT Configuration for mobile authentication
 JWT_SECRET = os.getenv("JWT_SECRET", SESSION_SECRET)  # Use same secret if not specified
@@ -291,44 +303,49 @@ async def refresh_users_cache() -> List[Dict[str, Any]]:
 
 
 async def refresh_reservations_cache() -> List[Dict[str, Any]]:
+    """Atualiza cache de reservas ativas (para hoje)."""
+    from datetime import date
     if not db_pool:
         with g_reservations_lock:
             return [
                 {
                     "spot": spot,
                     "plate": info.get("plate_raw"),
-                    "expires_at": info.get("expires_at"),
-                    "reserved_by": info.get("reserved_by"),
+                    "reservation_date": info.get("reservation_date"),
+                    "user_id": info.get("user_id"),
                 }
                 for spot, info in g_active_reservations.items()
             ]
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            "DELETE FROM public.parking_manual_reservations WHERE reserved_until <= NOW()"
-        )
+        # Buscar reservas ativas (só para hoje)
         rows = await conn.fetch(
-            "SELECT spot, plate, plate_norm, reserved_by, reserved_until, created_at "
-            "FROM public.parking_manual_reservations"
+            """
+            SELECT id, spot, plate, plate_norm, user_id, reservation_date, was_used, created_at 
+            FROM public.parking_manual_reservations
+            WHERE reservation_date = $1
+            """,
+            date.today()
         )
     result: List[Dict[str, Any]] = []
     with g_reservations_lock:
         g_active_reservations.clear()
         for row in rows:
-            expires_at = row["reserved_until"].timestamp()
             entry = {
                 "spot": row["spot"],
                 "plate": row["plate"],
                 "plate_norm": row["plate_norm"],
-                "reserved_by": row["reserved_by"],
+                "user_id": row["user_id"],
+                "reservation_date": row["reservation_date"].isoformat() if row["reservation_date"] else None,
+                "was_used": row["was_used"],
                 "created_at": row["created_at"].timestamp() if row["created_at"] else None,
-                "expires_at": expires_at,
             }
             g_active_reservations[row["spot"]] = {
                 "plate_raw": row["plate"],
                 "plate_norm": row["plate_norm"],
-                "reserved_by": row["reserved_by"],
+                "user_id": row["user_id"],
+                "reservation_date": entry["reservation_date"],
+                "was_used": row["was_used"],
                 "created_at": entry["created_at"],
-                "expires_at": expires_at,
             }
             result.append(entry)
     return result
@@ -1071,6 +1088,8 @@ async def list_reservations():
 
 @app.post("/api/reservations")
 async def create_reservation(payload: ReservationPayload, request: Request):
+    """Endpoint antigo de reservas - mantido para compatibilidade."""
+    from datetime import date
     ensure_spot_meta_loaded()
     spot_name = resolve_spot_name(payload.spot)
     if spot_name is None:
@@ -1090,32 +1109,34 @@ async def create_reservation(payload: ReservationPayload, request: Request):
     if spot_state and spot_state.get("occupied"):
         raise HTTPException(status_code=400, detail="Nao e possivel reservar uma vaga ocupada.")
 
-    prune_expired_reservations()
-
-    # Reserva expira em 12 horas (multa se não usar)
-    RESERVATION_EXPIRY_HOURS = 12
-    expires_at = time.time() + RESERVATION_EXPIRY_HOURS * 3600
     plate_norm = normalize_plate_text(plate_value)
+    reservation_date = date.today()  # Reserva para hoje
 
     with g_reservations_lock:
         if spot_name in g_active_reservations:
             raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
 
     if db_pool:
-        expires_dt = datetime.fromtimestamp(expires_at, tz=timezone.utc)
         async with db_pool.acquire() as conn:
+            # Obter user_id a partir do plate_norm
+            user_row = await conn.fetchrow(
+                "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1",
+                plate_norm
+            )
+            user_id = user_row["user_id"] if user_row else None
+            
             try:
                 await conn.execute(
                     """
                     INSERT INTO public.parking_manual_reservations
-                        (spot, plate, plate_norm, reserved_by, reserved_until)
+                        (user_id, spot, plate, plate_norm, reservation_date)
                     VALUES ($1, $2, $3, $4, $5)
                     """,
+                    user_id,
                     spot_name,
                     plate_value,
                     plate_norm,
-                    user.get("name"),
-                    expires_dt,
+                    reservation_date,
                 )
             except pg_exceptions.UniqueViolationError:
                 raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
@@ -1125,12 +1146,13 @@ async def create_reservation(payload: ReservationPayload, request: Request):
             g_active_reservations[spot_name] = {
                 "plate_raw": plate_value,
                 "plate_norm": plate_norm,
-                "reserved_by": user.get("name"),
+                "user_id": None,
+                "reservation_date": reservation_date.isoformat(),
+                "was_used": False,
                 "created_at": time.time(),
-                "expires_at": expires_at,
             }
 
-    return JSONResponse({"spot": spot_name, "plate": plate_value, "expires_at": expires_at})
+    return JSONResponse({"spot": spot_name, "plate": plate_value, "reservation_date": reservation_date.isoformat()})
 
 
 @app.delete("/api/reservations/{spot}")
@@ -2963,6 +2985,12 @@ async def startup_event():
                 command_timeout=60
             )
             print("[INFO] Pool de conexões PostgreSQL criado com sucesso.")
+            
+            # Injetar pool no módulo de autenticação v2.0
+            if set_auth_db_pool:
+                set_auth_db_pool(db_pool)
+                print("[INFO] Pool injetado no módulo de autenticação v2.0.")
+            
             await refresh_users_cache()
             await refresh_reservations_cache()
         except Exception as e:
@@ -2974,6 +3002,7 @@ async def startup_event():
     t = threading.Thread(target=parking_monitor_loop, daemon=True)
     t.start()
     print("[INFO] Thread de monitorização iniciada.")
+
 @app.get("/admin")
 def admin_page(request: Request):
     user = get_session_user(request)

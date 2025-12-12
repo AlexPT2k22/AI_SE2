@@ -1,77 +1,81 @@
-// Reservation page - AI_SE2 integrated
-import React from 'react';
-import { api } from '../api.js';
+// Reservation page - TugaPark v2.0
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { api, apiPost } from '../api';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 
 export default function Reserve() {
     const navigate = useNavigate();
-    const [user, setUser] = React.useState(null);
-    const [spots, setSpots] = React.useState({});
-    const [reservations, setReservations] = React.useState([]);
-    const [selectedSpot, setSelectedSpot] = React.useState('');
-    const [hours, setHours] = React.useState(1);
-    const [msg, setMsg] = React.useState('');
-    const [err, setErr] = React.useState('');
-    const [loading, setLoading] = React.useState(false);
+    const { user, isAuthenticated } = useAuth();
 
-    React.useEffect(() => {
-        loadUser();
-        loadSpots();
-        loadReservations();
-        const interval = setInterval(() => {
-            loadSpots();
-            loadReservations();
-        }, 5000);
+    const [spots, setSpots] = useState({});
+    const [reservations, setReservations] = useState([]);
+    const [vehicles, setVehicles] = useState([]);
+    const [selectedSpot, setSelectedSpot] = useState('');
+    const [selectedVehicle, setSelectedVehicle] = useState('');
+    const [msg, setMsg] = useState('');
+    const [err, setErr] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!isAuthenticated()) {
+            return;
+        }
+        loadData();
+        const interval = setInterval(loadData, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [user, isAuthenticated]);
 
-    const loadUser = async () => {
+    const loadData = async () => {
         try {
-            const data = await api('/api/auth/me');
-            setUser(data);
-        } catch (e) {
-            setUser(null);
-        }
-    };
+            const [spotsData, reservationsData, vehiclesData] = await Promise.all([
+                api('/parking'),
+                api('/api/reservations'),
+                api('/api/user/vehicles')
+            ]);
+            setSpots(spotsData);
+            setReservations(reservationsData.reservations || reservationsData || []);
+            setVehicles(vehiclesData.vehicles || []);
 
-    const loadSpots = async () => {
-        try {
-            const data = await api('/parking');
-            setSpots(data);
+            // Auto-select first vehicle if none selected
+            if (!selectedVehicle && vehiclesData.vehicles?.length > 0) {
+                const primaryVehicle = vehiclesData.vehicles.find(v => v.is_primary);
+                setSelectedVehicle(primaryVehicle?.plate || vehiclesData.vehicles[0].plate);
+            }
         } catch (e) {
-            console.error('Failed to load spots:', e);
-        }
-    };
-
-    const loadReservations = async () => {
-        try {
-            const data = await api('/api/reservations');
-            setReservations(data);
-        } catch (e) {
-            console.error('Failed to load reservations:', e);
+            console.error('Failed to load data:', e);
         }
     };
 
     const createReservation = async (e) => {
         e.preventDefault();
-        if (!user) {
-            setErr('Precisa de estar autenticado para reservar.');
+        if (!selectedVehicle) {
+            setErr('Please select a vehicle first.');
+            return;
+        }
+        if (!selectedSpot) {
+            setErr('Please select a spot.');
             return;
         }
         setMsg('');
         setErr('');
         setLoading(true);
         try {
-            const data = await api('/api/reservations', {
-                method: 'POST',
-                body: JSON.stringify({ spot: selectedSpot, hours: Number(hours) }),
+            // Get today's date in YYYY-MM-DD format
+            const today = new Date().toISOString().split('T')[0];
+
+            const data = await apiPost('/api/reservations', {
+                spot: selectedSpot,
+                plate: selectedVehicle,
+                reservation_date: today
             });
-            setMsg(`Reserva confirmada: ${data.spot} até ${new Date(data.expires_at * 1000).toLocaleString()}`);
+
+            const reservation = data.reservation || data;
+            setMsg(`Reservation confirmed: ${reservation.spot} for ${reservation.reservation_date}`);
             setSelectedSpot('');
-            loadSpots();
-            loadReservations();
+            loadData();
         } catch (e) {
             setErr(e.message);
         } finally {
@@ -80,28 +84,43 @@ export default function Reserve() {
     };
 
     const cancelReservation = async (spot) => {
-        if (!confirm(`Cancelar reserva de ${spot}?`)) return;
+        if (!confirm(`Cancel reservation for ${spot}?`)) return;
         try {
             await api(`/api/reservations/${spot}`, { method: 'DELETE' });
-            setMsg(`Reserva de ${spot} cancelada.`);
-            loadSpots();
-            loadReservations();
+            setMsg(`Reservation for ${spot} cancelled.`);
+            loadData();
         } catch (e) {
             setErr(e.message);
         }
     };
 
-    if (!user) {
+    if (!isAuthenticated()) {
         return (
             <Card className="p-4 text-center">
                 <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-4)' }}>
-                    Autenticação Necessária
+                    Authentication Required
                 </h2>
                 <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-6)' }}>
-                    Precisa de estar autenticado para reservar vagas.
+                    You need to be logged in to make reservations.
                 </p>
                 <Button onClick={() => navigate('/login')}>
-                    Ir para Login
+                    Go to Sign In
+                </Button>
+            </Card>
+        );
+    }
+
+    if (vehicles.length === 0) {
+        return (
+            <Card className="p-4 text-center">
+                <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-4)' }}>
+                    No Vehicles Registered
+                </h2>
+                <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-6)' }}>
+                    You need to register a vehicle before making reservations.
+                </p>
+                <Button onClick={() => navigate('/perfil')}>
+                    Go to Profile
                 </Button>
             </Card>
         );
@@ -115,21 +134,42 @@ export default function Reserve() {
         <div className="flex flex-col gap-4">
             <Card>
                 <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-4)' }}>
-                    Reservar Vaga
+                    Reserve a Spot
                 </h2>
                 <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-4)' }}>
-                    Utilizador: <strong>{user.name}</strong> | Matrícula: <strong>{user.plate}</strong>
+                    User: <strong>{user?.name}</strong>
                 </p>
 
                 {availableSpots.length === 0 ? (
                     <p style={{ color: 'var(--color-warning)', marginTop: 'var(--spacing-4)' }}>
-                        Não há vagas disponíveis para reservar neste momento.
+                        No spots available for reservation at this time.
                     </p>
                 ) : (
                     <form onSubmit={createReservation} className="flex flex-col gap-4 mt-4">
                         <div className="flex gap-4" style={{ flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="input-label" style={{ marginBottom: 'var(--spacing-2)', display: 'block' }}>Vaga</label>
+                                <label className="input-label" style={{ marginBottom: 'var(--spacing-2)', display: 'block' }}>
+                                    Vehicle
+                                </label>
+                                <select
+                                    className="input"
+                                    style={{ width: '100%' }}
+                                    value={selectedVehicle}
+                                    onChange={(e) => setSelectedVehicle(e.target.value)}
+                                    required
+                                >
+                                    {vehicles.map((v) => (
+                                        <option key={v.id} value={v.plate}>
+                                            {v.plate} {v.is_primary ? '(Primary)' : ''} {v.brand ? `- ${v.brand} ${v.model || ''}` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: '200px' }}>
+                                <label className="input-label" style={{ marginBottom: 'var(--spacing-2)', display: 'block' }}>
+                                    Spot
+                                </label>
                                 <select
                                     className="input"
                                     style={{ width: '100%' }}
@@ -137,7 +177,7 @@ export default function Reserve() {
                                     onChange={(e) => setSelectedSpot(e.target.value)}
                                     required
                                 >
-                                    <option value="">Selecione uma vaga...</option>
+                                    <option value="">Select a spot...</option>
                                     {availableSpots.map((name) => (
                                         <option key={name} value={name}>
                                             {name}
@@ -146,23 +186,9 @@ export default function Reserve() {
                                 </select>
                             </div>
 
-                            <div style={{ width: '150px' }}>
-                                <label className="input-label" style={{ marginBottom: 'var(--spacing-2)', display: 'block' }}>Duração</label>
-                                <select
-                                    className="input"
-                                    style={{ width: '100%' }}
-                                    value={hours}
-                                    onChange={(e) => setHours(e.target.value)}
-                                >
-                                    {[1, 2, 3, 4, 6, 12, 24].map((h) => (
-                                        <option key={h} value={h}>{h}h</option>
-                                    ))}
-                                </select>
-                            </div>
-
                             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                                <Button disabled={loading || !selectedSpot} style={{ width: '100%' }}>
-                                    {loading ? 'A reservar…' : 'Reservar'}
+                                <Button disabled={loading || !selectedSpot || !selectedVehicle} style={{ width: '100%' }}>
+                                    {loading ? 'Reserving...' : 'Reserve'}
                                 </Button>
                             </div>
                         </div>
@@ -175,21 +201,21 @@ export default function Reserve() {
 
             <Card>
                 <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-4)' }}>
-                    Reservas Ativas
+                    Active Reservations
                 </h2>
                 {reservations.length === 0 ? (
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                        Não há reservas ativas.
+                        No active reservations.
                     </p>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--color-surface-hover)' }}>
-                                    <th style={{ padding: 'var(--spacing-2)' }}>Vaga</th>
-                                    <th style={{ padding: 'var(--spacing-2)' }}>Matrícula</th>
-                                    <th style={{ padding: 'var(--spacing-2)' }}>Expira em</th>
-                                    <th style={{ padding: 'var(--spacing-2)' }}>Ações</th>
+                                    <th style={{ padding: 'var(--spacing-2)' }}>Spot</th>
+                                    <th style={{ padding: 'var(--spacing-2)' }}>License Plate</th>
+                                    <th style={{ padding: 'var(--spacing-2)' }}>Date</th>
+                                    <th style={{ padding: 'var(--spacing-2)' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -197,7 +223,7 @@ export default function Reserve() {
                                     <tr key={res.spot} style={{ borderBottom: '1px solid var(--color-surface-hover)' }}>
                                         <td style={{ padding: 'var(--spacing-2)' }}>{res.spot}</td>
                                         <td style={{ padding: 'var(--spacing-2)' }}>{res.plate || 'N/A'}</td>
-                                        <td style={{ padding: 'var(--spacing-2)' }}>{new Date(res.expires_at * 1000).toLocaleString()}</td>
+                                        <td style={{ padding: 'var(--spacing-2)' }}>{res.reservation_date || 'Today'}</td>
                                         <td style={{ padding: 'var(--spacing-2)' }}>
                                             <Button
                                                 variant="ghost"
@@ -205,7 +231,7 @@ export default function Reserve() {
                                                 onClick={() => cancelReservation(res.spot)}
                                                 style={{ color: 'var(--color-danger)' }}
                                             >
-                                                Cancelar
+                                                Cancel
                                             </Button>
                                         </td>
                                     </tr>

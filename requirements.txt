@@ -11,3 +11,5 @@ ultralytics
 supabase
 asyncpg
 PyJWT
+bcrypt
+email-validator
