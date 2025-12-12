@@ -489,7 +489,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   // Reservation modal state
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedSpot, setSelectedSpot] = useState(null);
-  const [selectedDuration, setSelectedDuration] = useState(1);
+  const [reserveForToday, setReserveForToday] = useState(true); // true = today, false = tomorrow
   
   // Confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -527,22 +527,23 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     return (elapsed * parkingRate).toFixed(2);
   };
   
-  // Get alerts for expiring reservations and payment deadlines
+  // Get alerts for reservations and payment deadlines
   const getAlerts = () => {
     const alerts = [];
     
-    // Check reservations expiring soon (< 1 hour)
-    reservations.forEach(res => {
-      const expiresIn = (res.expires_at * 1000 - currentTime) / 1000 / 60; // minutes
-      if (expiresIn > 0 && expiresIn < 60) {
-        alerts.push({
-          type: 'warning',
-          icon: 'clock',
-          title: 'Reserva a expirar',
-          message: `Vaga ${res.spot} expira em ${Math.floor(expiresIn)} min`,
-        });
-      }
+    // Show reminder for today's reservations
+    const todayReservations = reservations.filter(res => {
+      const today = new Date().toISOString().split('T')[0];
+      return res.reservation_date === today || !res.reservation_date;
     });
+    if (todayReservations.length > 0) {
+      alerts.push({
+        type: 'warning',
+        icon: 'clock',
+        title: 'Reservas para hoje',
+        message: `${todayReservations.length} reserva(s) ativa(s). Multa de 20€ se não usar!`,
+      });
+    }
     
     // Check payment deadlines
     sessions.forEach(session => {
@@ -576,7 +577,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   
   const alerts = getAlerts();
   
-  const durationOptions = [1, 2, 3, 4, 6, 12, 24];
+  // Day-based reservation - no duration options needed
 
   const loadData = async () => {
     try {
@@ -607,7 +608,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
 
   const openReserveModal = (spotName) => {
     setSelectedSpot(spotName);
-    setSelectedDuration(1);
+    setReserveForToday(true);
     setShowReserveModal(true);
   };
 
@@ -616,9 +617,9 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     try {
       await api.post('/api/mobile/reservations', { 
         spot: selectedSpot, 
-        duration_hours: selectedDuration 
+        reservation_date: reserveForToday ? 'today' : 'tomorrow'
       });
-      showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada por ${selectedDuration}h`);
+      showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada para ${reserveForToday ? 'hoje' : 'amanhã'}. Multa de 20€ se não usar.`);
       setShowReserveModal(false);
       setSelectedSpot(null);
       loadData();
@@ -851,7 +852,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                     <View>
                       <Text style={[styles.cardTitle, { color: theme.text }]}>Vaga {res.spot}</Text>
                       <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                        Expira: {new Date(res.expires_at * 1000).toLocaleString('pt-PT')}
+                        Para: {res.reservation_date || 'Hoje'}
+                      </Text>
+                      <Text style={[{ color: theme.warning, fontSize: 11, marginTop: 2 }]}>
+                        Multa de 20€ se não usar
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -1000,7 +1004,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         )}
       </ScrollView>
 
-      {/* Duration Picker Modal */}
+      {/* Day Picker Modal - Today or Tomorrow */}
       <Modal
         visible={showReserveModal}
         transparent={true}
@@ -1010,32 +1014,52 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Reservar {selectedSpot}</Text>
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Selecione a duração</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Selecione o dia</Text>
             
             <View style={styles.durationGrid}>
-              {durationOptions.map((hours) => (
-                <TouchableOpacity
-                  key={hours}
-                  style={[
-                    styles.durationButton,
-                    { borderColor: theme.border, backgroundColor: theme.background },
-                    selectedDuration === hours && { borderColor: theme.primary, backgroundColor: theme.primary }
-                  ]}
-                  onPress={() => {
-                    triggerHaptic('light');
-                    setSelectedDuration(hours);
-                  }}
-                >
-                  <Text style={[
-                    styles.durationButtonText,
-                    { color: theme.text },
-                    selectedDuration === hours && { color: theme.secondary }
-                  ]}>
-                    {hours}h
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginRight: 8 },
+                  reserveForToday && { borderColor: theme.primary, backgroundColor: theme.primary }
+                ]}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setReserveForToday(true);
+                }}
+              >
+                <Text style={[
+                  styles.durationButtonText,
+                  { color: theme.text },
+                  reserveForToday && { color: theme.secondary }
+                ]}>
+                  Hoje
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginLeft: 8 },
+                  !reserveForToday && { borderColor: theme.primary, backgroundColor: theme.primary }
+                ]}
+                onPress={() => {
+                  triggerHaptic('light');
+                  setReserveForToday(false);
+                }}
+              >
+                <Text style={[
+                  styles.durationButtonText,
+                  { color: theme.text },
+                  !reserveForToday && { color: theme.secondary }
+                ]}>
+                  Amanhã
+                </Text>
+              </TouchableOpacity>
             </View>
+            
+            <Text style={[styles.modalSubtitle, { color: theme.warning, marginTop: 12, fontSize: 13 }]}>
+              ⚠️ Multa de 20€ se não usar a reserva
+            </Text>
             
             <View style={styles.modalButtons}>
               <TouchableOpacity

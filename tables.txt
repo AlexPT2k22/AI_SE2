@@ -99,13 +99,15 @@ COMMENT ON COLUMN public.parking_user_payment_methods.card_last_four IS 'Último
 
 CREATE TABLE public.parking_manual_reservations (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES public.parking_users(id) ON DELETE CASCADE,
+    user_id INTEGER NULL REFERENCES public.parking_users(id) ON DELETE CASCADE,
     spot TEXT NOT NULL,
     plate TEXT NOT NULL,
     plate_norm TEXT NOT NULL,
-    reservation_date DATE NOT NULL,  -- Data da reserva (só hoje ou amanhã)
-    was_used BOOLEAN DEFAULT FALSE,   -- TRUE se o carro apareceu
-    fine_applied BOOLEAN DEFAULT FALSE,  -- TRUE se multa de 20€ foi aplicada
+    reservation_date DATE NULL,        -- Data da reserva (só hoje ou amanhã) - para web
+    reserved_by TEXT NULL,             -- Nome de quem reservou - para mobile
+    reserved_until TIMESTAMPTZ NULL,   -- Validade da reserva em tempo - para mobile
+    was_used BOOLEAN DEFAULT FALSE,    -- TRUE se o carro apareceu
+    fine_applied BOOLEAN DEFAULT FALSE,-- TRUE se multa de 20€ foi aplicada
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     CONSTRAINT unique_spot_per_date UNIQUE (spot, reservation_date)
 );

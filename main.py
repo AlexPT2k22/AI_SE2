@@ -497,25 +497,34 @@ def get_session_user(request: Request) -> Optional[Dict[str, Any]]:
 
 def prune_expired_reservations():
     """
-    Remove reservas expiradas e aplica multa se não foram usadas.
-    Multa = sessão com status 'fine_pending' para reservas não utilizadas.
+    Remove reservas de dias anteriores e aplica multa se não foram usadas.
+    NÃO EXPIRA reservas de hoje - só de ontem ou antes.
     """
-    now = time.time()
+    from datetime import date
+    
+    today = date.today()
     expired: List[str] = []
     expired_with_fine: List[Dict] = []  # Reservas expiradas que precisam de multa
     
     with g_reservations_lock:
         for spot, info in list(g_active_reservations.items()):
-            if info.get("expires_at", 0) <= now:
-                expired.append(spot)
-                # Guardar info para aplicar multa
-                expired_with_fine.append({
-                    "spot": spot,
-                    "plate": info.get("plate_raw"),
-                    "plate_norm": info.get("plate_norm"),
-                    "reserved_by": info.get("reserved_by"),
-                })
-                g_active_reservations.pop(spot, None)
+            reservation_date_str = info.get("reservation_date")
+            if reservation_date_str:
+                try:
+                    # Parse da data da reserva
+                    res_date = date.fromisoformat(reservation_date_str)
+                    # Só expira reservas de ONTEM ou antes (não de hoje!)
+                    if res_date < today and not info.get("was_used", False):
+                        expired.append(spot)
+                        expired_with_fine.append({
+                            "spot": spot,
+                            "plate": info.get("plate_raw"),
+                            "plate_norm": info.get("plate_norm"),
+                            "reservation_date": reservation_date_str,
+                        })
+                        g_active_reservations.pop(spot, None)
+                except (ValueError, TypeError):
+                    pass  # Data inválida, ignora
     
     if expired and db_pool and event_loop:
         asyncio.run_coroutine_threadsafe(db_delete_reservations(expired), event_loop)
@@ -534,7 +543,7 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
     if not db_pool or not expired_reservations:
         return
     
-    RESERVATION_FINE = 5.00  # Multa de 5€ por não usar reserva
+    RESERVATION_FINE = 20.00  # Multa de 20€ por não usar reserva
     
     async with db_pool.acquire() as conn:
         for res in expired_reservations:
@@ -546,7 +555,7 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
                     SELECT id FROM public.parking_sessions
                     WHERE plate_norm = $1 
                       AND spot = $2
-                      AND status IN ('open', 'closed')
+                      AND status IN ('open', 'closed', 'paid')
                     LIMIT 1
                     """,
                     res.get("plate_norm"),
@@ -555,6 +564,7 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
                 
                 if not existing:
                     # Não usou a reserva → criar sessão de multa
+                    reservation_date = res.get('reservation_date', 'N/A')
                     await conn.execute(
                         """
                         INSERT INTO public.parking_sessions 
@@ -565,9 +575,9 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
                         res.get("plate_norm"),
                         res.get("spot"),
                         RESERVATION_FINE,
-                        f"Multa: reserva do spot {res.get('spot')} expirou sem ser usada",
+                        f"Multa: reserva de {reservation_date} para vaga {res.get('spot')} não foi utilizada",
                     )
-                    print(f"[INFO] 💰 Multa aplicada: {res.get('plate')} não usou reserva do {res.get('spot')}")
+                    print(f"[INFO] 💰 Multa de {RESERVATION_FINE}€ aplicada: {res.get('plate')} não usou reserva do {res.get('spot')} ({reservation_date})")
             except Exception as e:
                 print(f"[ERROR] Falha ao aplicar multa: {e}")
 
@@ -1051,7 +1061,7 @@ async def debug_list_overrides():
 
 class ReservationPayload(BaseModel):
     spot: str = Field(..., min_length=1)
-    duration_hours: Optional[int] = Field(default=12, ge=1, le=24)  # Default 12h, max 24h
+    reservation_date: str = Field(default="today")  # "today" or "tomorrow"
 
 
 class AuthPayload(BaseModel):
@@ -1266,7 +1276,7 @@ async def mobile_register(payload: MobileAuthPayload):
                 plate_norm
             )
             if existing:
-                raise HTTPException(status_code=400, detail="Placa ja registada.")
+                raise HTTPException(status_code=400, detail="Matrícula ja registada.")
             
             # Create user
             user_row = await conn.fetchrow(
@@ -1304,7 +1314,7 @@ async def mobile_login(payload: MobileAuthPayload):
     """Login user and return JWT token for mobile app."""
     plate_norm = normalize_plate_text(payload.plate)
     if not plate_norm:
-        raise HTTPException(status_code=400, detail="Placa invalida.")
+        raise HTTPException(status_code=400, detail="Matrícula invalida.")
     user = await ensure_user_loaded(plate_norm)
     if not user:
         raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
@@ -1386,7 +1396,13 @@ async def mobile_create_reservation(
     payload: ReservationPayload, 
     authorization: Optional[str] = Header(None)
 ):
-    """Create reservation for authenticated mobile user."""
+    """Create reservation for authenticated mobile user.
+    
+    Uses day-based reservations: 'today' or 'tomorrow'.
+    If user doesn't show up, they get a 20€ fine.
+    """
+    from datetime import date, timedelta
+    
     user = get_jwt_user(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
@@ -1404,37 +1420,52 @@ async def mobile_create_reservation(
         spot_state = g_spot_status.get(spot_name)
     if spot_state and spot_state.get("occupied"):
         raise HTTPException(status_code=400, detail="Nao e possivel reservar uma vaga ocupada.")
-
+    
+    # Determine reservation date
+    today = date.today()
+    if payload.reservation_date == "tomorrow":
+        reservation_date = today + timedelta(days=1)
+    else:
+        reservation_date = today  # Default: today
+    
     prune_expired_reservations()
-
-    RESERVATION_EXPIRY_HOURS = payload.duration_hours or 12
-    expires_at = time.time() + RESERVATION_EXPIRY_HOURS * 3600
 
     with g_reservations_lock:
         if spot_name in g_active_reservations:
             raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
 
     if db_pool:
-        expires_dt = datetime.fromtimestamp(expires_at, tz=timezone.utc)
         async with db_pool.acquire() as conn:
+            # Get user_id from plate
+            user_row = await conn.fetchrow(
+                "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1",
+                user["plate_norm"]
+            )
+            user_id = user_row["user_id"] if user_row else None
+            
             try:
                 await conn.execute(
                     """
                     INSERT INTO public.parking_manual_reservations
-                        (spot, plate, plate_norm, reserved_by, reserved_until)
+                        (user_id, spot, plate, plate_norm, reservation_date)
                     VALUES ($1, $2, $3, $4, $5)
                     """,
+                    user_id,
                     spot_name,
                     user["plate"],
                     user["plate_norm"],
-                    user["name"],
-                    expires_dt,
+                    reservation_date,
                 )
             except pg_exceptions.UniqueViolationError:
-                raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
+                raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva para este dia.")
         await refresh_reservations_cache()
     
-    return {"spot": spot_name, "plate": user["plate"], "expires_at": expires_at, "duration_hours": RESERVATION_EXPIRY_HOURS}
+    return {
+        "spot": spot_name, 
+        "plate": user["plate"], 
+        "reservation_date": reservation_date.isoformat(),
+        "message": f"Vaga {spot_name} reservada para {'amanhã' if payload.reservation_date == 'tomorrow' else 'hoje'}. Multa de 20€ se não usar."
+    }
 
 
 @app.delete("/api/mobile/reservations/{spot_name}")
@@ -1725,8 +1756,8 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
         )
         
         # DEBUG: Ver o que está a ser procurado
-        print(f"[EXIT DEBUG] Placa detectada: {plate}")
-        print(f"[EXIT DEBUG] Placa normalizada: {plate_norm}")
+        print(f"[EXIT DEBUG] Matrícula detectada: {plate}")
+        print(f"[EXIT DEBUG] Matrícula normalizada: {plate_norm}")
         print(f"[EXIT DEBUG] Sessão encontrada: {session}")
         
         if not session:
@@ -2586,7 +2617,7 @@ def live_page():
                     text += " [RESERVADO]";
                 }
                 if (plate) {
-                    text += " | Placa: " + plate;
+                    text += " | Matrícula: " + plate;
                 }
                 if (violation) {
                     text += " [VIOLACAO]";
@@ -2888,7 +2919,7 @@ def login_page():
             </div>
             <form id="auth-form">
                 <label>Nome<input id="auth-name" required /></label>
-                <label>Placa<input id="auth-plate" required /></label>
+                <label>Matrícula<input id="auth-plate" required /></label>
                 <button type="submit">Continuar</button>
             </form>
             <div id="message"></div>
@@ -3057,7 +3088,7 @@ def admin_page(request: Request):
                 div.className = "spot";
                 let text = name + " -> " + (info.occupied ? "OCUPADO" : "LIVRE") + " (" + (info.prob !== undefined ? Number(info.prob).toFixed(2) : "--") + ")";
                 if (info.reserved) text += " [RESERVADO]";
-                if (info.plate) text += " | Placa: " + info.plate;
+                if (info.plate) text += " | Matrícula: " + info.plate;
                 if (info.violation) text += " [VIOLACAO]";
                 if (info.reservation && info.reservation.plate) text += " @(" + info.reservation.plate + ")";
                 div.innerText = text;
@@ -3107,7 +3138,7 @@ def admin_page(request: Request):
                     div.className = "reservation-item";
                     const exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "";
                     const plateInfo = res.plate ? res.plate : "N/D";
-                    div.innerHTML = `<span><strong>${{res.spot}}</strong> -> Placa: ${{plateInfo}}<br/><small>expira ${{exp}}</small></span><button type="button" onclick="cancelReservation('${{res.spot}}')">Cancelar</button>`;
+                    div.innerHTML = `<span><strong>${{res.spot}}</strong> -> Matrícula: ${{plateInfo}}<br/><small>expira ${{exp}}</small></span><button type="button" onclick="cancelReservation('${{res.spot}}')">Cancelar</button>`;
                     reservationsDiv.appendChild(div);
                 }});
             }} catch (err) {{

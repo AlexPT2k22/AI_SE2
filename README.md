@@ -382,14 +382,10 @@ Endpoints para forçar manualmente o estado de uma vaga (útil para testes sem c
 
 ```bash
 # Forçar vaga como LIVRE
-curl -X POST http://localhost:8000/api/debug/spot \
-  -H "Content-Type: application/json" \
-  -d "{\"spot\": \"spot01\", \"occupied\": false}"
+curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"spot01\", \"occupied\": false}"
 
 # Forçar vaga como OCUPADA
-curl -X POST http://localhost:8000/api/debug/spot \
-  -H "Content-Type: application/json" \
-  -d "{\"spot\": \"spot01\", \"occupied\": true}"
+curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"spot01\", \"occupied\": true}"
 
 # Resetar vaga para deteção automática (volta a usar o modelo AI)
 curl -X DELETE http://localhost:8000/api/debug/spot/spot01
