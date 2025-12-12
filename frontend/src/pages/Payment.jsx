@@ -64,7 +64,7 @@ export default function Payment() {
     if (loading) {
         return (
             <Card style={{ padding: 'var(--spacing-6)', textAlign: 'center' }}>
-                <p style={{ color: 'var(--color-text-secondary)' }}>A carregar sessão...</p>
+                <p style={{ color: 'var(--color-text-secondary)' }}>Loading session...</p>
             </Card>
         );
     }
@@ -72,9 +72,9 @@ export default function Payment() {
     if (error && !session) {
         return (
             <Card style={{ padding: 'var(--spacing-6)', textAlign: 'center' }}>
-                <p style={{ color: 'var(--color-danger)' }}>Erro: {error}</p>
+                <p style={{ color: 'var(--color-danger)' }}>Error: {error}</p>
                 <Button onClick={() => navigate('/sessions')} style={{ marginTop: 'var(--spacing-4)' }}>
-                    Voltar
+                    Go Back
                 </Button>
             </Card>
         );
@@ -83,15 +83,15 @@ export default function Payment() {
     if (success) {
         return (
             <Card style={{ padding: 'var(--spacing-6)', textAlign: 'center' }}>
-                <div style={{ fontSize: '4rem', marginBottom: 'var(--spacing-4)' }}>✅</div>
+                <div style={{ fontSize: '4rem', marginBottom: 'var(--spacing-4)' }}>OK</div>
                 <h2 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-2)', color: 'var(--color-success)' }}>
-                    Pagamento Concluído!
+                    Payment Complete!
                 </h2>
                 <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-4)' }}>
-                    O pagamento de €{session.amount_due.toFixed(2)} foi processado com sucesso.
+                    Payment of €{session.amount_due.toFixed(2)} was processed successfully.
                 </p>
                 <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
-                    A redirecionar...
+                    Redirecting...
                 </p>
             </Card>
         );
@@ -100,137 +100,139 @@ export default function Payment() {
     const amountDue = session.amount_due - session.amount_paid;
 
     return (
-        <div className="flex flex-col gap-4" style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <Card style={{ padding: 'var(--spacing-4)' }}>
-                <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-2)' }}>
-                    Pagamento Simulado
-                </h1>
-                <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                    Sistema de pagamento simulado para fins académicos
-                </p>
-            </Card>
-
-            {/* Session Details */}
-            <Card>
-                <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: '600', marginBottom: 'var(--spacing-4)' }}>
-                    Detalhes da Sessão
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>ID da Sessão:</span>
-                        <span style={{ fontWeight: 'bold' }}>{session.id}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Matrícula:</span>
-                        <span style={{ fontWeight: 'bold' }}>{session.plate}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Entrada:</span>
-                        <span>{session.entry_time ? new Date(session.entry_time).toLocaleString('pt-PT') : '-'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Saída:</span>
-                        <span>{session.exit_time ? new Date(session.exit_time).toLocaleString('pt-PT') : '-'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Valor Total:</span>
-                        <span style={{ fontWeight: 'bold' }}>€{session.amount_due.toFixed(2)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
-                        <span style={{ color: 'var(--color-text-secondary)' }}>Já Pago:</span>
-                        <span>€{session.amount_paid.toFixed(2)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-3)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--border-radius-md)', marginTop: 'var(--spacing-2)' }}>
-                        <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'bold' }}>A Pagar:</span>
-                        <span style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'bold', color: 'var(--color-primary)' }}>
-                            €{amountDue.toFixed(2)}
-                        </span>
-                    </div>
-                </div>
-            </Card>
-
-            {/* Payment Method */}
-            <Card>
-                <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: '600', marginBottom: 'var(--spacing-4)' }}>
-                    Método de Pagamento
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
-                    {['card', 'cash', 'mbway'].map((method) => {
-                        const labels = {
-                            card: '💳 Cartão',
-                            cash: '💵 Dinheiro',
-                            mbway: '📱 MB WAY'
-                        };
-
-                        return (
-                            <label
-                                key={method}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: 'var(--spacing-3)',
-                                    border: `2px solid ${paymentMethod === method ? 'var(--color-primary)' : 'var(--color-surface-hover)'}`,
-                                    borderRadius: 'var(--border-radius-md)',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s ease',
-                                    backgroundColor: paymentMethod === method ? 'rgba(99, 102, 241, 0.1)' : 'transparent'
-                                }}
-                            >
-                                <input
-                                    type="radio"
-                                    name="payment-method"
-                                    value={method}
-                                    checked={paymentMethod === method}
-                                    onChange={(e) => setPaymentMethod(e.target.value)}
-                                    style={{ marginRight: 'var(--spacing-2)' }}
-                                />
-                                <span style={{ fontSize: 'var(--font-size-base)', fontWeight: '500' }}>
-                                    {labels[method]}
-                                </span>
-                            </label>
-                        );
-                    })}
-                </div>
-            </Card>
-
-            {/* Pay Button */}
-            <Card style={{ padding: 'var(--spacing-4)', textAlign: 'center' }}>
-                {error && (
-                    <p style={{ color: 'var(--color-danger)', marginBottom: 'var(--spacing-3)' }}>
-                        {error}
+        <div style={{ padding: 'var(--spacing-4)', maxWidth: '600px', margin: '0 auto' }}>
+            <div className="flex flex-col" style={{ gap: 'var(--spacing-6)' }}>
+                <Card style={{ padding: 'var(--spacing-6)' }}>
+                    <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-2)' }}>
+                        Simulated Payment
+                    </h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                        Simulated payment system for academic purposes
                     </p>
-                )}
+                </Card>
 
-                <Button
-                    onClick={handlePayment}
-                    disabled={processing || amountDue <= 0}
-                    style={{ 
-                        width: '100%', 
-                        padding: 'var(--spacing-3)',
-                        fontSize: 'var(--font-size-lg)',
-                        fontWeight: 'bold'
-                    }}
-                >
-                    {processing ? '🔄 A processar...' : `💳 Pagar €${amountDue.toFixed(2)}`}
-                </Button>
+                {/* Session Details */}
+                <Card style={{ padding: 'var(--spacing-6)' }}>
+                    <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: '600', marginBottom: 'var(--spacing-4)' }}>
+                        Session Details
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>Session ID:</span>
+                            <span style={{ fontWeight: 'bold' }}>{session.id}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>License Plate:</span>
+                            <span style={{ fontWeight: 'bold' }}>{session.plate}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>Entry:</span>
+                            <span>{session.entry_time ? new Date(session.entry_time).toLocaleString() : '-'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>Exit:</span>
+                            <span>{session.exit_time ? new Date(session.exit_time).toLocaleString() : '-'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>Total Amount:</span>
+                            <span style={{ fontWeight: 'bold' }}>€{session.amount_due.toFixed(2)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-2)', borderBottom: '1px solid var(--color-surface-hover)' }}>
+                            <span style={{ color: 'var(--color-text-secondary)' }}>Already Paid:</span>
+                            <span>€{session.amount_paid.toFixed(2)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 'var(--spacing-3)', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--border-radius-md)', marginTop: 'var(--spacing-2)' }}>
+                            <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'bold' }}>To Pay:</span>
+                            <span style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                                €{amountDue.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                </Card>
 
-                <p style={{ 
-                    marginTop: 'var(--spacing-3)', 
-                    fontSize: 'var(--font-size-xs)', 
-                    color: 'var(--color-text-muted)' 
-                }}>
-                    ⚠️ Sistema de pagamento simulado para fins académicos
-                </p>
+                {/* Payment Method */}
+                <Card style={{ padding: 'var(--spacing-6)' }}>
+                    <h3 style={{ fontSize: 'var(--font-size-lg)', fontWeight: '600', marginBottom: 'var(--spacing-4)' }}>
+                        Payment Method
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
+                        {['card', 'cash', 'mbway'].map((method) => {
+                            const labels = {
+                                card: 'Card',
+                                cash: 'Cash',
+                                mbway: 'MB WAY'
+                            };
 
-                <Button
-                    variant="ghost"
-                    onClick={() => navigate('/sessions')}
-                    style={{ marginTop: 'var(--spacing-2)' }}
-                    disabled={processing}
-                >
-                    ← Voltar
-                </Button>
-            </Card>
+                            return (
+                                <label
+                                    key={method}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: 'var(--spacing-3)',
+                                        border: `2px solid ${paymentMethod === method ? 'var(--color-primary)' : 'var(--color-surface-hover)'}`,
+                                        borderRadius: 'var(--border-radius-md)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease',
+                                        backgroundColor: paymentMethod === method ? 'rgba(99, 102, 241, 0.1)' : 'transparent'
+                                    }}
+                                >
+                                    <input
+                                        type="radio"
+                                        name="payment-method"
+                                        value={method}
+                                        checked={paymentMethod === method}
+                                        onChange={(e) => setPaymentMethod(e.target.value)}
+                                        style={{ marginRight: 'var(--spacing-2)' }}
+                                    />
+                                    <span style={{ fontSize: 'var(--font-size-base)', fontWeight: '500' }}>
+                                        {labels[method]}
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </Card>
+
+                {/* Pay Button */}
+                <Card style={{ padding: 'var(--spacing-6)', textAlign: 'center' }}>
+                    {error && (
+                        <p style={{ color: 'var(--color-danger)', marginBottom: 'var(--spacing-3)' }}>
+                            {error}
+                        </p>
+                    )}
+
+                    <Button
+                        onClick={handlePayment}
+                        disabled={processing || amountDue <= 0}
+                        style={{
+                            width: '100%',
+                            padding: 'var(--spacing-3)',
+                            fontSize: 'var(--font-size-lg)',
+                            fontWeight: 'bold'
+                        }}
+                    >
+                        {processing ? 'Processing...' : `Pay €${amountDue.toFixed(2)}`}
+                    </Button>
+
+                    <p style={{
+                        marginTop: 'var(--spacing-3)',
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--color-text-muted)'
+                    }}>
+                        Simulated payment system for academic purposes
+                    </p>
+
+                    <Button
+                        variant="ghost"
+                        onClick={() => navigate('/sessions')}
+                        style={{ marginTop: 'var(--spacing-2)' }}
+                        disabled={processing}
+                    >
+                        Back
+                    </Button>
+                </Card>
+            </div>
         </div>
     );
 }

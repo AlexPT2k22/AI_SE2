@@ -9,10 +9,10 @@ import SpotCard from '../components/common/SpotCard';
 import './Home.css';
 
 const ZONES = [
-    { id: 'all', label: 'Todas' },
-    { id: 'A', label: 'Zona A' },
-    { id: 'B', label: 'Zona B' },
-    { id: 'C', label: 'Zona C' },
+    { id: 'all', label: 'All' },
+    { id: 'A', label: 'Zone A' },
+    { id: 'B', label: 'Zone B' },
+    { id: 'C', label: 'Zone C' },
 ];
 
 export default function Home() {
@@ -70,7 +70,7 @@ export default function Home() {
                 <div className="stats-content">
                     <div className="stat-item">
                         <span className="stat-value">{freeCount}</span>
-                        <span className="stat-label">lugares livres</span>
+                        <span className="stat-label">free spots</span>
                     </div>
                     <div className="stat-divider"></div>
                     <div className="stat-item">
@@ -83,20 +83,20 @@ export default function Home() {
             {/* Parking Section */}
             <section className="parking-section">
                 <div className="section-header">
-                    <h3>Estacionamento</h3>
-                    <Link to="/live" className="see-all-link">Ver Tudo</Link>
+                    <h3>Parking</h3>
+                    <Link to="/live" className="see-all-link">View All</Link>
                 </div>
 
                 {loading ? (
                     <div className="loading-state">
-                        <p>A carregar...</p>
+                        <p>Loading...</p>
                     </div>
                 ) : (
                     <div className="spots-grid">
                         {filteredSpots.map((name) => {
                             const spot = spots[name];
-                            const status = spot.occupied ? 'occupied' : 
-                                          spot.reserved ? 'reserved' : 'available';
+                            const status = spot.occupied ? 'occupied' :
+                                spot.reserved ? 'reserved' : 'available';
                             return (
                                 <SpotCard
                                     key={name}
@@ -115,7 +115,7 @@ export default function Home() {
             <div className="quick-actions">
                 <Link to="/reservar" className="action-btn-wrapper">
                     <Button variant="primary" size="lg" className="continue-btn">
-                        Reservar Vaga
+                        Reserve Spot
                         <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                             <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
                         </svg>
@@ -132,28 +132,28 @@ export default function Home() {
                                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                             </svg>
                         </button>
-                        <h3 className="modal-title">Confirmar Reserva</h3>
+                        <h3 className="modal-title">Confirm Reservation</h3>
                         <p className="modal-subtitle">TugaPark</p>
-                        
+
                         <div className="modal-details">
                             <div className="detail-box">
-                                <span className="detail-label">Zona</span>
-                                <span className="detail-value">Zona A</span>
+                                <span className="detail-label">Zone</span>
+                                <span className="detail-value">Zone A</span>
                             </div>
                             <div className="detail-box">
-                                <span className="detail-label">Lugar</span>
+                                <span className="detail-label">Spot</span>
                                 <span className="detail-value">{selectedSpot}</span>
                             </div>
                         </div>
 
                         <div className="modal-price">
                             <span className="price-value">€2.50</span>
-                            <span className="price-label">por hora</span>
+                            <span className="price-label">per hour</span>
                         </div>
 
                         <Link to="/reservar" onClick={closeModal}>
                             <Button variant="primary" size="lg" className="confirm-btn">
-                                Confirmar
+                                Confirm
                                 <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                                 </svg>

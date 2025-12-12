@@ -40,23 +40,23 @@ export default function Login() {
 
         try {
             if (mode === 'register') {
-                // Validar passwords
+                // Validate passwords
                 if (password !== confirmPassword) {
-                    throw new Error('As passwords não coincidem');
+                    throw new Error('Passwords do not match');
                 }
                 if (password.length < 6) {
-                    throw new Error('A password deve ter pelo menos 6 caracteres');
+                    throw new Error('Password must be at least 6 characters');
                 }
                 if (!fullName.trim()) {
-                    throw new Error('O nome é obrigatório');
+                    throw new Error('Full name is required');
                 }
 
                 await register(email, password, fullName);
-                setMessage('Conta criada com sucesso! A redirecionar...');
+                setMessage('Account created successfully! Redirecting...');
             } else {
                 // Login
                 await login(identifier, password);
-                setMessage('Login efetuado! A redirecionar...');
+                setMessage('Login successful! Redirecting...');
             }
 
             setTimeout(() => navigate('/'), 1000);
@@ -106,8 +106,8 @@ export default function Login() {
                     {mode === 'register' && (
                         <>
                             <Input
-                                label="Nome completo"
-                                placeholder="João Silva"
+                                label="Full Name"
+                                placeholder="John Smith"
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 required
@@ -115,7 +115,7 @@ export default function Login() {
                             <Input
                                 type="email"
                                 label="Email"
-                                placeholder="joao@exemplo.pt"
+                                placeholder="john@example.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
@@ -125,8 +125,8 @@ export default function Login() {
 
                     {mode === 'login' && (
                         <Input
-                            label="Email ou Matrícula"
-                            placeholder="joao@exemplo.pt ou AA-00-BB"
+                            label="Email or License Plate"
+                            placeholder="john@example.com or AA-00-BB"
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
                             required
@@ -145,7 +145,7 @@ export default function Login() {
                     {mode === 'register' && (
                         <Input
                             type="password"
-                            label="Confirmar Password"
+                            label="Confirm Password"
                             placeholder="••••••••"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}

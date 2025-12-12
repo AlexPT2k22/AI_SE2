@@ -7,10 +7,10 @@ import SpotCard from '../components/common/SpotCard';
 import './Occupancy.css';
 
 const ZONES = [
-    { id: 'all', label: 'Todas' },
-    { id: 'A', label: 'Zona A' },
-    { id: 'B', label: 'Zona B' },
-    { id: 'C', label: 'Zona C' },
+    { id: 'all', label: 'All' },
+    { id: 'A', label: 'Zone A' },
+    { id: 'B', label: 'Zone B' },
+    { id: 'C', label: 'Zone C' },
 ];
 
 export default function Occupancy() {
@@ -57,8 +57,8 @@ export default function Occupancy() {
     if (loading) {
         return (
             <Card>
-                <h2 className="occupancy-title">Ocupação do Parque</h2>
-                <p className="loading-text">A carregar...</p>
+                <h2 className="occupancy-title">Parking Occupancy</h2>
+                <p className="loading-text">Loading...</p>
             </Card>
         );
     }
@@ -66,7 +66,7 @@ export default function Occupancy() {
     if (error) {
         return (
             <Card>
-                <h2 className="occupancy-title">Ocupação do Parque</h2>
+                <h2 className="occupancy-title">Parking Occupancy</h2>
                 <p className="error-text">{error}</p>
             </Card>
         );
@@ -76,15 +76,15 @@ export default function Occupancy() {
         <div className="occupancy-page">
             <Card>
                 <div className="occupancy-header">
-                    <h2 className="occupancy-title">Ocupação do Parque</h2>
+                    <h2 className="occupancy-title">Parking Occupancy</h2>
                     <div className="occupancy-stats">
                         <span className="stat stat-free">
                             <span className="stat-dot free"></span>
-                            Livres: <strong>{free}</strong>
+                            Free: <strong>{free}</strong>
                         </span>
                         <span className="stat stat-occupied">
                             <span className="stat-dot occupied"></span>
-                            Ocupados: <strong>{occupied}</strong>
+                            Occupied: <strong>{occupied}</strong>
                         </span>
                     </div>
                 </div>
@@ -94,8 +94,8 @@ export default function Occupancy() {
                     <div className="parking-grid">
                         {filteredSpots.map((name) => {
                             const spot = spots[name];
-                            const status = spot.occupied ? 'occupied' : 
-                                          spot.reserved ? 'reserved' : 'available';
+                            const status = spot.occupied ? 'occupied' :
+                                spot.reserved ? 'reserved' : 'available';
                             return (
                                 <SpotCard
                                     key={name}

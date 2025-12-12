@@ -83,7 +83,7 @@ export default function LiveMonitor() {
                 <div style={{ gridColumn: 'span 1' }}>
                     <Card>
                         <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: '600', marginBottom: 'var(--spacing-4)' }}>
-                            Vídeo Anotado
+                            Annotated Video
                         </h2>
                         <div style={{
                             aspectRatio: '16/9',
@@ -148,7 +148,7 @@ export default function LiveMonitor() {
                                                             <span style={{ fontSize: '1.25rem' }}>{statusIcon}</span>
                                                             <span className="font-bold" style={{ fontSize: '1.1rem' }}>{name}</span>
                                                         </div>
-                                                        <span style={{ 
+                                                        <span style={{
                                                             fontSize: '0.875rem',
                                                             opacity: 0.9,
                                                             fontWeight: '500'
@@ -157,18 +157,18 @@ export default function LiveMonitor() {
                                                         </span>
                                                     </div>
                                                     <div className="flex gap-1">
-                                                        {isReserved && <span style={{ backgroundColor: 'var(--color-primary)', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>RESERVADO</span>}
-                                                        {isViolation && <span style={{ backgroundColor: 'var(--color-warning)', color: 'black', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>VIOLAÇÃO</span>}
+                                                        {isReserved && <span style={{ backgroundColor: 'var(--color-primary)', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>RESERVED</span>}
+                                                        {isViolation && <span style={{ backgroundColor: 'var(--color-warning)', color: 'black', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>VIOLATION</span>}
                                                     </div>
                                                 </div>
                                                 {plate && (
                                                     <div style={{ fontSize: '0.875rem', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
-                                                        <strong>Matrícula:</strong> <code style={{ color: 'white', backgroundColor: 'rgba(0,0,0,0.3)', padding: '0.2rem 0.5rem', borderRadius: '4px', marginLeft: '0.25rem' }}>{plate}</code>
+                                                        <strong>License Plate:</strong> <code style={{ color: 'white', backgroundColor: 'rgba(0,0,0,0.3)', padding: '0.2rem 0.5rem', borderRadius: '4px', marginLeft: '0.25rem' }}>{plate}</code>
                                                     </div>
                                                 )}
                                                 {spot.reservation?.plate && (
                                                     <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.85 }}>
-                                                        Reservado para: <strong>{spot.reservation.plate}</strong>
+                                                        Reserved for: <strong>{spot.reservation.plate}</strong>
                                                     </div>
                                                 )}
                                             </div>
