@@ -46,7 +46,7 @@ export default function Sessions() {
             paid: 'var(--color-success)',
             cancelled: 'var(--color-danger)'
         };
-        return colors[status] || 'var(--color-secondary)';
+        return colors[status] || 'var(--color-danger)';
     };
 
     return (

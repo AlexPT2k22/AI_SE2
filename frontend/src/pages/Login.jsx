@@ -25,6 +25,12 @@ export default function Login() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [fullName, setFullName] = useState('');
 
+    // React to URL changes (e.g., navigating to /login?register=true)
+    useEffect(() => {
+        const isRegister = searchParams.get('register');
+        setMode(isRegister ? 'register' : 'login');
+    }, [searchParams]);
+
     // Redirecionar se já está autenticado
     useEffect(() => {
         if (isAuthenticated()) {

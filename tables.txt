@@ -141,6 +141,7 @@ CREATE TABLE public.parking_sessions (
     amount_paid NUMERIC(10, 2) DEFAULT 0 NULL,
     payment_method_id INTEGER NULL REFERENCES public.parking_user_payment_methods(id) ON DELETE SET NULL,
     auto_payment_at TIMESTAMPTZ NULL,  -- Quando foi feito o débito automático
+    payment_deadline TIMESTAMPTZ NULL, -- Prazo para sair após pagamento (10 min)
     status TEXT DEFAULT 'open' NOT NULL CHECK (status IN ('open', 'paid', 'closed', 'payment_pending', 'fine_pending')),
     notes TEXT NULL,
     entry_image_url TEXT NULL,

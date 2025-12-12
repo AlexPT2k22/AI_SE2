@@ -281,6 +281,7 @@ def resolve_spot_name(raw: str) -> Optional[str]:
 
 
 async def refresh_users_cache() -> List[Dict[str, Any]]:
+    """Refresh cache of users with their vehicles (for plate lookup)."""
     if not db_pool:
         with g_users_lock:
             return [
@@ -288,8 +289,13 @@ async def refresh_users_cache() -> List[Dict[str, Any]]:
                 for info in g_users.values()
             ]
     async with db_pool.acquire() as conn:
+        # Query users with their vehicles (new schema)
         rows = await conn.fetch(
-            "SELECT full_name, plate, plate_norm FROM public.parking_web_users"
+            """
+            SELECT u.full_name, v.plate, v.plate_norm 
+            FROM public.parking_users u
+            JOIN public.parking_user_vehicles v ON v.user_id = u.id
+            """
         )
     payload = [
         {"name": row["full_name"], "plate": row["plate"], "plate_norm": row["plate_norm"]}
@@ -1178,62 +1184,9 @@ async def delete_reservation(spot: str):
     return JSONResponse({"spot": spot_name, "released": True})
 
 
-@app.post("/api/auth/register")
-async def auth_register(payload: AuthPayload, request: Request):
-    if not db_pool:
-        raise HTTPException(status_code=500, detail="Base de dados indisponivel.")
-    name = payload.name.strip()
-    plate = payload.plate.strip()
-    plate_norm = normalize_plate_text(plate)
-    if not name or not plate_norm:
-        raise HTTPException(status_code=400, detail="Nome e placa validos sao obrigatorios.")
-    try:
-        async with db_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO public.parking_web_users (full_name, plate, plate_norm)
-                VALUES ($1, $2, $3)
-                RETURNING full_name, plate, plate_norm
-                """,
-                name,
-                plate,
-                plate_norm,
-            )
-    except pg_exceptions.UniqueViolationError:
-        raise HTTPException(status_code=400, detail="Placa ja registada.")
-    await refresh_users_cache()
-    request.session["user"] = {"name": row["full_name"], "plate": row["plate"], "plate_norm": row["plate_norm"]}
-    return {"name": row["full_name"], "plate": row["plate"]}
-
-
-@app.post("/api/auth/login")
-async def auth_login(payload: AuthPayload, request: Request):
-    plate_norm = normalize_plate_text(payload.plate)
-    if not plate_norm:
-        raise HTTPException(status_code=400, detail="Placa invalida.")
-    user = await ensure_user_loaded(plate_norm)
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
-    if user["name"].strip().lower() != payload.name.strip().lower():
-        raise HTTPException(status_code=401, detail="Nome nao confere com a placa.")
-    request.session["user"] = {"name": user["name"], "plate": user["plate"], "plate_norm": user["plate_norm"]}
-    return {"name": user["name"], "plate": user["plate"]}
-
-
-@app.post("/api/auth/logout")
-async def auth_logout(request: Request):
-    request.session.clear()
-    response = JSONResponse({"ok": True})
-    response.delete_cookie("session")
-    return response
-
-
-@app.get("/api/auth/me")
-def auth_me(request: Request):
-    user = get_session_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="Nao autenticado.")
-    return user
+# NOTE: /api/auth/register, /api/auth/login, /api/auth/logout, /api/auth/me
+# are now handled by auth_routes.py (included via auth_router above)
+# The auth_routes.py uses email/password authentication with JWT tokens
 
 
 # ------------------------------------------------------------
@@ -1286,7 +1239,11 @@ class MobileAuthPayload(BaseModel):
 
 @app.post("/api/mobile/register")
 async def mobile_register(payload: MobileAuthPayload):
-    """Register new user and return JWT token for mobile app."""
+    """Register new user and return JWT token for mobile app.
+    
+    Creates a user in parking_users (with a placeholder email based on plate)
+    and adds the vehicle in parking_user_vehicles.
+    """
     if not db_pool:
         raise HTTPException(status_code=500, detail="Base de dados indisponivel.")
     name = payload.name.strip()
@@ -1294,22 +1251,50 @@ async def mobile_register(payload: MobileAuthPayload):
     plate_norm = normalize_plate_text(plate)
     if not name or not plate_norm:
         raise HTTPException(status_code=400, detail="Nome e placa validos sao obrigatorios.")
+    
+    # Generate a placeholder email based on plate (for mobile-only users)
+    placeholder_email = f"{plate_norm.lower()}@mobile.tugapark.pt"
+    # Generate a hashed placeholder password (user would need to reset if using web)
+    import bcrypt
+    placeholder_password = bcrypt.hashpw(plate_norm.encode(), bcrypt.gensalt()).decode()
+    
     try:
         async with db_pool.acquire() as conn:
-            row = await conn.fetchrow(
+            # Check if plate already registered
+            existing = await conn.fetchrow(
+                "SELECT id FROM public.parking_user_vehicles WHERE plate_norm = $1",
+                plate_norm
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Placa ja registada.")
+            
+            # Create user
+            user_row = await conn.fetchrow(
                 """
-                INSERT INTO public.parking_web_users (full_name, plate, plate_norm)
-                VALUES ($1, $2, $3)
-                RETURNING full_name, plate, plate_norm
+                INSERT INTO public.parking_users (email, password_hash, full_name, role)
+                VALUES ($1, $2, $3, 'client')
+                RETURNING id, full_name
                 """,
-                name,
+                placeholder_email,
+                placeholder_password,
+                name
+            )
+            
+            # Add vehicle
+            await conn.execute(
+                """
+                INSERT INTO public.parking_user_vehicles (user_id, plate, plate_norm, is_primary)
+                VALUES ($1, $2, $3, TRUE)
+                """,
+                user_row["id"],
                 plate,
-                plate_norm,
+                plate_norm
             )
     except pg_exceptions.UniqueViolationError:
-        raise HTTPException(status_code=400, detail="Placa ja registada.")
+        raise HTTPException(status_code=400, detail="Utilizador ou placa ja registada.")
+    
     await refresh_users_cache()
-    user_data = {"name": row["full_name"], "plate": row["plate"], "plate_norm": row["plate_norm"]}
+    user_data = {"name": user_row["full_name"], "plate": plate, "plate_norm": plate_norm}
     token = generate_jwt_token(user_data)
     return {"token": token, "user": {"name": user_data["name"], "plate": user_data["plate"]}}
 
@@ -1960,8 +1945,8 @@ async def api_payments(payload: PaymentPayload):
         # ✅ Inserir registo de pagamento
         await conn.execute(
             """
-            INSERT INTO public.parking_payments (session_id, amount, method)
-            VALUES ($1, $2, $3)
+            INSERT INTO public.parking_payments (session_id, amount, method, payment_type)
+            VALUES ($1, $2, $3, 'parking')
             """,
             session_id,
             amount,

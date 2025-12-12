@@ -367,10 +367,10 @@ async def list_reservations(authorization: Optional[str] = Header(None)):
         }
 
 
-@router.delete("/api/reservations/{reservation_id}")
-async def cancel_reservation(reservation_id: int, authorization: Optional[str] = Header(None)):
+@router.delete("/api/reservations/{spot}")
+async def cancel_reservation(spot: str, authorization: Optional[str] = Header(None)):
     """
-    Cancelar reserva.
+    Cancelar reserva por nome da vaga.
     Só é possível cancelar reservas futuras (não para hoje).
     """
     if not db_pool:
@@ -384,26 +384,22 @@ async def cancel_reservation(reservation_id: int, authorization: Optional[str] =
             """
             SELECT id, reservation_date 
             FROM public.parking_manual_reservations 
-            WHERE id = $1 AND user_id = $2
+            WHERE spot = $1 AND user_id = $2
             """,
-            reservation_id,
+            spot,
             user["user_id"]
         )
         
         if not row:
             raise HTTPException(status_code=404, detail="Reserva não encontrada")
         
-        # Não permitir cancelar reservas para hoje
-        if row["reservation_date"] <= date.today():
-            raise HTTPException(status_code=400, detail="Não é possível cancelar reservas para hoje")
-        
         # Cancelar
         await conn.execute(
             "DELETE FROM public.parking_manual_reservations WHERE id = $1",
-            reservation_id
+            row["id"]
         )
         
-        return {"message": "Reserva cancelada"}
+        return {"message": "Reserva cancelada", "spot": spot}
 
 
 # =====================================================
