@@ -1,12 +1,10 @@
 // Sessions History - View all parking sessions
 import React from 'react';
 import { api } from '../api.js';
-import { useNavigate } from 'react-router-dom';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 
 export default function Sessions() {
-    const navigate = useNavigate();
     const [sessions, setSessions] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
@@ -150,38 +148,42 @@ export default function Sessions() {
                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '2px solid var(--color-surface-hover)' }}>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>ID</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>License Plate</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Camera</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Entry</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Exit</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Amount</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Paid</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Status</th>
-                                        <th style={{ padding: 'var(--spacing-2)', fontWeight: '600' }}>Actions</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>License Plate</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>Spot</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>Entry</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>Exit</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>Amount</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>Paid</th>
+                                        <th style={{ padding: 'var(--spacing-3)', fontWeight: '600' }}>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {sessions.map((session) => (
                                         <tr key={session.id} style={{ borderBottom: '1px solid var(--color-surface-hover)' }}>
-                                            <td style={{ padding: 'var(--spacing-2)' }}>{session.id}</td>
-                                            <td style={{ padding: 'var(--spacing-2)', fontWeight: 'bold' }}>{session.plate}</td>
-                                            <td style={{ padding: 'var(--spacing-2)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                                                {session.camera_id}
+                                            <td style={{ padding: 'var(--spacing-3)', fontWeight: 'bold' }}>{session.plate}</td>
+                                            <td style={{ padding: 'var(--spacing-3)' }}>
+                                                <span style={{
+                                                    backgroundColor: 'var(--color-surface)',
+                                                    padding: '0.25rem 0.5rem',
+                                                    borderRadius: 'var(--border-radius-sm)',
+                                                    fontWeight: '600'
+                                                }}>
+                                                    {session.spot || '-'}
+                                                </span>
                                             </td>
-                                            <td style={{ padding: 'var(--spacing-2)', fontSize: 'var(--font-size-sm)' }}>
+                                            <td style={{ padding: 'var(--spacing-3)', fontSize: 'var(--font-size-sm)' }}>
                                                 {session.entry_time ? new Date(session.entry_time).toLocaleString() : '-'}
                                             </td>
-                                            <td style={{ padding: 'var(--spacing-2)', fontSize: 'var(--font-size-sm)' }}>
+                                            <td style={{ padding: 'var(--spacing-3)', fontSize: 'var(--font-size-sm)' }}>
                                                 {session.exit_time ? new Date(session.exit_time).toLocaleString() : '-'}
                                             </td>
-                                            <td style={{ padding: 'var(--spacing-2)', fontWeight: 'bold' }}>
+                                            <td style={{ padding: 'var(--spacing-3)', fontWeight: 'bold' }}>
                                                 €{session.amount_due?.toFixed(2) || '0.00'}
                                             </td>
-                                            <td style={{ padding: 'var(--spacing-2)' }}>
+                                            <td style={{ padding: 'var(--spacing-3)' }}>
                                                 €{session.amount_paid?.toFixed(2) || '0.00'}
                                             </td>
-                                            <td style={{ padding: 'var(--spacing-2)' }}>
+                                            <td style={{ padding: 'var(--spacing-3)' }}>
                                                 <span style={{
                                                     backgroundColor: getStatusColor(session.status),
                                                     padding: '0.25rem 0.5rem',
@@ -192,17 +194,6 @@ export default function Sessions() {
                                                 }}>
                                                     {session.status}
                                                 </span>
-                                            </td>
-                                            <td style={{ padding: 'var(--spacing-2)' }}>
-                                                {session.status === 'open' && session.amount_due > 0 && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => navigate(`/payment/${session.id}`)}
-                                                    >
-                                                        Pay
-                                                    </Button>
-                                                )}
                                             </td>
                                         </tr>
                                     ))}

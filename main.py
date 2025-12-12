@@ -1657,12 +1657,28 @@ async def api_entry(camera_id: str = Form(...), image: UploadFile = File(...)):
             
             # Criar nova entrada com a URL da imagem
             plate_norm = normalize_plate_text(plate)
+            
+            # Procurar user_id pelo veículo registado
+            user_id = None
+            vehicle_row = await conn.fetchrow(
+                """
+                SELECT user_id FROM public.parking_user_vehicles 
+                WHERE plate_norm = $1
+                LIMIT 1
+                """,
+                plate_norm
+            )
+            if vehicle_row:
+                user_id = vehicle_row["user_id"]
+                print(f"[INFO] Veículo {plate} associado ao user_id: {user_id}")
+            
             row = await conn.fetchrow(
                 """
-                INSERT INTO public.parking_sessions (plate, plate_norm, camera_id, status, entry_image_url)
-                VALUES ($1, $2, $3, 'open', $4)
+                INSERT INTO public.parking_sessions (user_id, plate, plate_norm, camera_id, status, entry_image_url)
+                VALUES ($1, $2, $3, $4, 'open', $5)
                 RETURNING id, entry_time
                 """,
+                user_id,
                 plate,
                 plate_norm,
                 camera_id,
@@ -2005,7 +2021,7 @@ async def list_sessions(
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
     
     # Build query with filters
-    query = "SELECT id, plate, camera_id, entry_time, exit_time, amount_due, amount_paid, status FROM public.parking_sessions WHERE 1=1"
+    query = "SELECT id, plate, camera_id, spot, entry_time, exit_time, amount_due, amount_paid, status FROM public.parking_sessions WHERE 1=1"
     params = []
     param_idx = 1
     
@@ -2033,6 +2049,7 @@ async def list_sessions(
             "id": row["id"],
             "plate": row["plate"],
             "camera_id": row["camera_id"],
+            "spot": row["spot"],
             "entry_time": row["entry_time"].isoformat() if row["entry_time"] else None,
             "exit_time": row["exit_time"].isoformat() if row["exit_time"] else None,
             "amount_due": float(row["amount_due"]) if row["amount_due"] else 0,
@@ -2127,7 +2144,7 @@ async def admin_stats():
         # Recent sessions
         recent = await conn.fetch(
             """
-            SELECT id, plate, entry_time, exit_time, amount_due, status
+            SELECT id, plate, spot, entry_time, exit_time, amount_due, status
             FROM public.parking_sessions
             ORDER BY entry_time DESC
             LIMIT 10
@@ -2138,6 +2155,7 @@ async def admin_stats():
         {
             "id": r["id"],
             "plate": r["plate"],
+            "spot": r["spot"],
             "entry_time": r["entry_time"].isoformat() if r["entry_time"] else None,
             "exit_time": r["exit_time"].isoformat() if r["exit_time"] else None,
             "amount_due": float(r["amount_due"]) if r["amount_due"] else 0,
