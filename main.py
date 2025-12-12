@@ -1539,12 +1539,13 @@ async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] 
         
         await conn.execute(
             """
-            INSERT INTO public.parking_payments (session_id, amount, method)
-            VALUES ($1, $2, $3)
+            INSERT INTO public.parking_payments (session_id, amount, method, payment_type)
+            VALUES ($1, $2, $3, $4)
             """,
             session_id,
             amount,
             method,
+            'parking',
         )
         
         current_paid = session["amount_paid"] or 0
@@ -1581,6 +1582,277 @@ async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] 
 
 
 # ------------------------------------------------------------
+# Mobile Vehicles Management
+# ------------------------------------------------------------
+@app.get("/api/mobile/vehicles")
+async def mobile_get_vehicles(authorization: Optional[str] = Header(None)):
+    """Get all vehicles for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        # First get user_id from parking_user_vehicles
+        user_row = await conn.fetchrow(
+            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+            user["plate_norm"]
+        )
+        if not user_row:
+            return {"vehicles": [{"plate": user["plate"], "is_primary": True}]}
+        
+        user_id = user_row["user_id"]
+        
+        # Get all vehicles for this user
+        rows = await conn.fetch(
+            """
+            SELECT plate, plate_norm, is_primary, created_at
+            FROM public.parking_user_vehicles
+            WHERE user_id = $1
+            ORDER BY is_primary DESC, created_at ASC
+            """,
+            user_id
+        )
+        
+        vehicles = [
+            {
+                "plate": row["plate"],
+                "is_primary": row["is_primary"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None
+            }
+            for row in rows
+        ]
+        
+    return {"vehicles": vehicles}
+
+
+class VehiclePayload(BaseModel):
+    plate: str = Field(..., min_length=1)
+
+
+@app.post("/api/mobile/vehicles")
+async def mobile_add_vehicle(payload: VehiclePayload, authorization: Optional[str] = Header(None)):
+    """Add a new vehicle for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    plate = payload.plate.strip().upper()
+    plate_norm = normalize_plate_text(plate)
+    
+    async with db_pool.acquire() as conn:
+        # Get user_id from existing vehicle
+        user_row = await conn.fetchrow(
+            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+            user["plate_norm"]
+        )
+        
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        user_id = user_row["user_id"]
+        
+        # Check if plate already exists for this user
+        existing = await conn.fetchrow(
+            "SELECT id FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="Este veiculo ja esta registado.")
+        
+        # Add vehicle
+        await conn.execute(
+            """
+            INSERT INTO public.parking_user_vehicles (user_id, plate, plate_norm, is_primary)
+            VALUES ($1, $2, $3, FALSE)
+            """,
+            user_id, plate, plate_norm
+        )
+    
+    return {"plate": plate, "message": "Veiculo adicionado com sucesso."}
+
+
+@app.delete("/api/mobile/vehicles/{plate}")
+async def mobile_delete_vehicle(plate: str, authorization: Optional[str] = Header(None)):
+    """Remove a vehicle for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    plate_norm = normalize_plate_text(plate)
+    
+    # Can't delete primary vehicle (the one used to login)
+    if plate_norm == user["plate_norm"]:
+        raise HTTPException(status_code=400, detail="Nao pode remover o veiculo principal.")
+    
+    async with db_pool.acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+            user["plate_norm"]
+        )
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        user_id = user_row["user_id"]
+        
+        result = await conn.execute(
+            "DELETE FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+        
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Veiculo nao encontrado.")
+    
+    return {"plate": plate, "message": "Veiculo removido com sucesso."}
+
+
+# ------------------------------------------------------------
+# Mobile Payment Cards Management
+# ------------------------------------------------------------
+@app.get("/api/mobile/cards")
+async def mobile_get_cards(authorization: Optional[str] = Header(None)):
+    """Get all payment cards for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        # Get user_id
+        user_row = await conn.fetchrow(
+            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+            user["plate_norm"]
+        )
+        if not user_row:
+            return {"cards": []}
+        
+        user_id = user_row["user_id"]
+        
+        rows = await conn.fetch(
+            """
+            SELECT id, card_type, card_last_four, expiry_month, expiry_year, is_default, created_at
+            FROM public.parking_user_payment_methods
+            WHERE user_id = $1
+            ORDER BY is_default DESC, created_at ASC
+            """,
+            user_id
+        )
+        
+        cards = [
+            {
+                "id": row["id"],
+                "card_type": row["card_type"],
+                "last_four": row["card_last_four"],
+                "expiry": f"{row['expiry_month']:02d}/{row['expiry_year'] % 100:02d}" if row["expiry_month"] else None,
+                "is_default": row["is_default"]
+            }
+            for row in rows
+        ]
+    
+    return {"cards": cards}
+
+
+class CardPayload(BaseModel):
+    card_number: str = Field(..., min_length=13, max_length=19)
+    expiry_month: int = Field(..., ge=1, le=12)
+    expiry_year: int = Field(..., ge=2024)
+    cvv: str = Field(..., min_length=3, max_length=4)
+    card_type: str = Field(default="visa")  # visa, mastercard, etc.
+
+
+@app.post("/api/mobile/cards")
+async def mobile_add_card(payload: CardPayload, authorization: Optional[str] = Header(None)):
+    """Add a new payment card for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    # Get last 4 digits only (never store full card number)
+    last_four = payload.card_number[-4:]
+    
+    async with db_pool.acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+            user["plate_norm"]
+        )
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        user_id = user_row["user_id"]
+        
+        # Check if this card already exists
+        existing = await conn.fetchrow(
+            "SELECT id FROM public.parking_user_cards WHERE user_id = $1 AND last_four = $2",
+            user_id, last_four
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="Este cartao ja esta registado.")
+        
+        # Check if this is the first card (make it default)
+        card_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM public.parking_user_cards WHERE user_id = $1",
+            user_id
+        )
+        is_default = card_count == 0
+        
+        await conn.execute(
+            """
+            INSERT INTO public.parking_user_cards 
+                (user_id, card_type, last_four, expiry_month, expiry_year, is_default)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            user_id, payload.card_type, last_four, payload.expiry_month, payload.expiry_year, is_default
+        )
+    
+    return {
+        "last_four": last_four,
+        "card_type": payload.card_type,
+        "message": "Cartao adicionado com sucesso."
+    }
+
+
+@app.delete("/api/mobile/cards/{card_id}")
+async def mobile_delete_card(card_id: int, authorization: Optional[str] = Header(None)):
+    """Remove a payment card for authenticated mobile user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+            user["plate_norm"]
+        )
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        user_id = user_row["user_id"]
+        
+        result = await conn.execute(
+            "DELETE FROM public.parking_user_cards WHERE id = $1 AND user_id = $2",
+            card_id, user_id
+        )
+        
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Cartao nao encontrado.")
+    
+    return {"card_id": card_id, "message": "Cartao removido com sucesso."}
 # Função auxiliar para processar imagem e detectar matrícula
 # ------------------------------------------------------------
 async def process_plate_image(image_bytes: bytes) -> Tuple[Optional[str], Optional[bytes]]:
