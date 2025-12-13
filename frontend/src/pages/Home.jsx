@@ -53,7 +53,7 @@ export default function Home() {
     };
 
     const filteredSpots = getFilteredSpots();
-    const freeCount = filteredSpots.filter(name => !spots[name]?.occupied).length;
+    const freeCount = filteredSpots.filter(name => !spots[name]?.occupied && !spots[name]?.reserved).length;
 
     const handleSpotClick = (spotName) => {
         setSelectedSpot(spotName);

@@ -48,10 +48,11 @@ except ImportError:
 
 # Novo módulo de autenticação v2.0
 try:
-    from auth_routes import router as auth_router, set_db_pool as set_auth_db_pool
+    from auth_routes import router as auth_router, set_db_pool as set_auth_db_pool, set_refresh_reservations_callback
 except ImportError:
     auth_router = None
     set_auth_db_pool = None
+    set_refresh_reservations_callback = None
 
 
 # ------------------------------------------------------------
@@ -185,10 +186,22 @@ class ConnectionManager:
             self.active.remove(websocket)
 
     async def broadcast(self, message: dict):
+        """Broadcast estado das vagas."""
         dead = []
         for ws in self.active:
             try:
                 await ws.send_json(message)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+    
+    async def broadcast_notification(self, notification: dict):
+        """Broadcast notificação em tempo real."""
+        dead = []
+        for ws in self.active:
+            try:
+                await ws.send_json({"type": "notification", "data": notification})
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -498,33 +511,23 @@ def get_session_user(request: Request) -> Optional[Dict[str, Any]]:
 
 def prune_expired_reservations():
     """
-    Remove reservas expiradas e aplica multa se não foram usadas.
-    Multa = sessão com status 'fine_pending' para reservas não utilizadas.
+    Remove reservas do cache que já passaram da data.
+    Reservas manuais usam reservation_date (data), não expires_at (timestamp).
+    Multas são aplicadas pela função process_expired_reservations_daily.
     """
-    now = time.time()
+    from datetime import date
+    today = date.today().isoformat()
     expired: List[str] = []
-    expired_with_fine: List[Dict] = []  # Reservas expiradas que precisam de multa
     
     with g_reservations_lock:
         for spot, info in list(g_active_reservations.items()):
-            if info.get("expires_at", 0) <= now:
+            reservation_date = info.get("reservation_date")
+            # Só remover do cache se a data da reserva já passou
+            if reservation_date and reservation_date < today:
                 expired.append(spot)
-                # Guardar info para aplicar multa
-                expired_with_fine.append({
-                    "spot": spot,
-                    "plate": info.get("plate_raw"),
-                    "plate_norm": info.get("plate_norm"),
-                    "reserved_by": info.get("reserved_by"),
-                })
                 g_active_reservations.pop(spot, None)
     
-    if expired and db_pool and event_loop:
-        asyncio.run_coroutine_threadsafe(db_delete_reservations(expired), event_loop)
-        # Aplicar multas para reservas não usadas
-        asyncio.run_coroutine_threadsafe(
-            apply_reservation_fines(expired_with_fine),
-            event_loop
-        )
+    # Não apagar da BD nem aplicar multas aqui - isso é feito por process_expired_reservations_daily
 
 
 async def apply_reservation_fines(expired_reservations: List[Dict]):
@@ -535,7 +538,7 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
     if not db_pool or not expired_reservations:
         return
     
-    RESERVATION_FINE = 5.00  # Multa de 5€ por não usar reserva
+    RESERVATION_FINE = 20.00  # Multa de 20€ por não usar reserva
     
     async with db_pool.acquire() as conn:
         for res in expired_reservations:
@@ -578,6 +581,213 @@ def get_reservation_info(name: str) -> Optional[Dict[str, Any]]:
     with g_reservations_lock:
         info = g_active_reservations.get(name)
         return dict(info) if info else None
+
+
+async def process_expired_reservations_daily():
+    """
+    Verifica reservas de dias anteriores que não foram usadas e aplica multa de 20€.
+    Esta função deve ser chamada periodicamente (ex: no startup e a cada hora).
+    """
+    if not db_pool:
+        return
+    
+    RESERVATION_FINE = 20.00  # Multa de 20€ por não usar reserva
+    
+    try:
+        async with db_pool.acquire() as conn:
+            # Buscar reservas de dias passados que não foram usadas e não tiveram multa aplicada
+            expired_rows = await conn.fetch(
+                """
+                SELECT r.id, r.user_id, r.spot, r.plate, r.plate_norm, r.reservation_date, r.was_used
+                FROM public.parking_manual_reservations r
+                WHERE r.reservation_date < CURRENT_DATE
+                  AND r.was_used = FALSE
+                  AND r.fine_applied = FALSE
+                """
+            )
+            
+            for res in expired_rows:
+                try:
+                    # Verificar se realmente não houve entrada nesse dia
+                    session_on_date = await conn.fetchrow(
+                        """
+                        SELECT id FROM public.parking_sessions
+                        WHERE plate_norm = $1 
+                          AND spot = $2
+                          AND DATE(entry_time) = $3
+                        LIMIT 1
+                        """,
+                        res["plate_norm"],
+                        res["spot"],
+                        res["reservation_date"]
+                    )
+                    
+                    if not session_on_date:
+                        # Não usou a reserva → aplicar multa
+                        
+                        # 1. Criar sessão de multa
+                        await conn.execute(
+                            """
+                            INSERT INTO public.parking_sessions 
+                                (plate, plate_norm, spot, status, amount_due, notes, user_id)
+                            VALUES ($1, $2, $3, 'fine_pending', $4, $5, $6)
+                            """,
+                            res["plate"],
+                            res["plate_norm"],
+                            res["spot"],
+                            RESERVATION_FINE,
+                            f"Multa: reserva para {res['reservation_date']} não foi usada",
+                            res["user_id"]
+                        )
+                        
+                        # 2. Marcar reserva como multa aplicada
+                        await conn.execute(
+                            "UPDATE public.parking_manual_reservations SET fine_applied = TRUE WHERE id = $1",
+                            res["id"]
+                        )
+                        
+                        # 3. Criar notificação para o utilizador
+                        await conn.execute(
+                            """
+                            INSERT INTO public.parking_notifications 
+                                (user_id, title, body, notification_type, data)
+                            VALUES ($1, $2, $3, $4, $5)
+                            """,
+                            res["user_id"],
+                            "💰 Multa aplicada",
+                            f"Multa de €{RESERVATION_FINE:.2f} aplicada por não utilizar a reserva do spot {res['spot']} em {res['reservation_date']}.",
+                            "fine",
+                            json.dumps({
+                                "spot": res["spot"],
+                                "plate": res["plate"],
+                                "reservation_date": res["reservation_date"].isoformat(),
+                                "amount": RESERVATION_FINE
+                            })
+                        )
+                        
+                        print(f"[FINE] 💰 Multa de €{RESERVATION_FINE:.2f} aplicada: {res['plate']} não usou reserva do {res['spot']} em {res['reservation_date']}")
+                    else:
+                        # Usou a reserva → marcar como usada
+                        await conn.execute(
+                            "UPDATE public.parking_manual_reservations SET was_used = TRUE WHERE id = $1",
+                            res["id"]
+                        )
+                        
+                except Exception as e:
+                    print(f"[ERROR] Erro ao processar reserva expirada {res['id']}: {e}")
+                    
+    except Exception as e:
+        print(f"[ERROR] Erro ao processar reservas expiradas: {e}")
+
+
+async def notify_reservation_violation(
+    spot: str,
+    intruder_plate: str,
+    reserved_plate: Optional[str],
+    reserved_user_id: Optional[int]
+):
+    """
+    Notifica admins, dono da reserva e o intruder quando alguém estaciona numa vaga reservada para outro.
+    """
+    if not db_pool:
+        return
+    
+    try:
+        async with db_pool.acquire() as conn:
+            # Normalizar matrícula do intruso
+            intruder_plate_norm = normalize_plate_text(intruder_plate)
+            
+            # Buscar user_id do intruso (quem estacionou no lugar errado)
+            intruder_user_id = None
+            if intruder_plate_norm:
+                intruder_row = await conn.fetchrow(
+                    "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+                    intruder_plate_norm
+                )
+                if intruder_row:
+                    intruder_user_id = intruder_row["user_id"]
+            
+            # 1. Notificar todos os admins
+            admin_rows = await conn.fetch(
+                "SELECT id FROM public.parking_users WHERE role = 'admin'"
+            )
+            
+            for admin in admin_rows:
+                await conn.execute(
+                    """
+                    INSERT INTO public.parking_notifications 
+                        (user_id, title, body, notification_type, data)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    admin["id"],
+                    f"⚠️ Violation: {spot}",
+                    f"Vehicle {intruder_plate} parked in spot {spot} which is reserved for {reserved_plate or 'another user'}",
+                    "violation_alert",
+                    json.dumps({
+                        "spot": spot,
+                        "intruder_plate": intruder_plate,
+                        "intruder_user_id": intruder_user_id,
+                        "reserved_plate": reserved_plate,
+                        "reserved_user_id": reserved_user_id,
+                        "timestamp": datetime.now(tz=timezone.utc).isoformat()
+                    })
+                )
+            
+            # 2. Notificar o dono da reserva (para a app mobile)
+            if reserved_user_id:
+                await conn.execute(
+                    """
+                    INSERT INTO public.parking_notifications 
+                        (user_id, title, body, notification_type, data)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    reserved_user_id,
+                    f"⚠️ Someone parked in your spot!",
+                    f"Vehicle {intruder_plate} is parked in spot {spot} which you reserved. Please contact support.",
+                    "reservation_violation",
+                    json.dumps({
+                        "spot": spot,
+                        "intruder_plate": intruder_plate,
+                        "your_plate": reserved_plate,
+                        "timestamp": datetime.now(tz=timezone.utc).isoformat()
+                    })
+                )
+            
+            # 3. Notificar o intruso (quem estacionou no lugar errado) - para a app mobile
+            if intruder_user_id:
+                await conn.execute(
+                    """
+                    INSERT INTO public.parking_notifications 
+                        (user_id, title, body, notification_type, data)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    intruder_user_id,
+                    f"⚠️ You parked in a reserved spot!",
+                    f"Spot {spot} is reserved for another vehicle ({reserved_plate or 'unknown'}). Please move your car.",
+                    "reservation_violation",
+                    json.dumps({
+                        "spot": spot,
+                        "your_plate": intruder_plate,
+                        "reserved_plate": reserved_plate,
+                        "timestamp": datetime.now(tz=timezone.utc).isoformat()
+                    })
+                )
+            
+            print(f"[VIOLATION] 🚨 Spot {spot}: {intruder_plate} parked in reserved spot for {reserved_plate}")
+            
+            # 4. Broadcast via WebSocket para Admin Dashboard (instantâneo)
+            await ws_manager.broadcast_notification({
+                "notification_type": "violation_alert",
+                "title": f"⚠️ Violation: {spot}",
+                "body": f"Vehicle {intruder_plate} parked in spot reserved for {reserved_plate or 'another user'}",
+                "spot": spot,
+                "intruder_plate": intruder_plate,
+                "reserved_plate": reserved_plate,
+                "timestamp": datetime.now(tz=timezone.utc).isoformat()
+            })
+            
+    except Exception as e:
+        print(f"[ERROR] Failed to create violation notification: {e}")
 
 
 def extract_spot_crop(frame: np.ndarray, pts: np.ndarray) -> Optional[np.ndarray]:
@@ -632,6 +842,8 @@ def _run_alpr_job(name: str, crop: np.ndarray):
 async def update_session_spot(plate: str, spot: str):
     """
     Atualiza a sessão aberta com a vaga onde o carro estacionou.
+    Se não existir sessão, cria uma nova automaticamente.
+    Se o carro mudou de vaga, atualiza a vaga existente.
     Chamado quando o sistema de CV deteta que uma vaga foi ocupada.
     """
     if not db_pool:
@@ -642,28 +854,67 @@ async def update_session_spot(plate: str, spot: str):
     
     async with db_pool.acquire() as conn:
         try:
-            # Atualizar APENAS sessões abertas SEM vaga ainda atribuída
-            result = await conn.execute(
+            # Verificar se já tem sessão aberta com esta vaga específica
+            existing_same_spot = await conn.fetchrow(
                 """
-                UPDATE public.parking_sessions
-                SET spot = $1, plate_norm = $2
-                WHERE plate = $3 
-                  AND status = 'open' 
-                  AND spot IS NULL
-                  AND exit_time IS NULL
-                RETURNING id
+                SELECT id FROM public.parking_sessions
+                WHERE plate = $1 AND status = 'open' AND spot = $2 AND exit_time IS NULL
                 """,
-                spot,
-                plate_norm,
+                plate, spot
+            )
+            if existing_same_spot:
+                # Já tem sessão para esta vaga, nada a fazer
+                return
+            
+            # Verificar se tem sessão aberta (para outra vaga ou sem vaga)
+            existing_session = await conn.fetchrow(
+                """
+                SELECT id, spot FROM public.parking_sessions
+                WHERE plate = $1 AND status = 'open' AND exit_time IS NULL
+                ORDER BY entry_time DESC
+                LIMIT 1
+                """,
                 plate
             )
             
-            # Verificar se atualizou alguma linha
-            rows_updated = result.split()[-1]
-            if rows_updated != "0":
-                print(f"[INFO] ✅ Sessão atualizada: {plate} → vaga {spot}")
-            else:
-                print(f"[WARN] Nenhuma sessão aberta encontrada para {plate} (pode já ter vaga atribuída)")
+            if existing_session:
+                old_spot = existing_session["spot"]
+                if old_spot and old_spot != spot:
+                    # Carro mudou de vaga - atualizar
+                    await conn.execute(
+                        "UPDATE public.parking_sessions SET spot = $1 WHERE id = $2",
+                        spot, existing_session["id"]
+                    )
+                    print(f"[INFO] 🔄 Carro mudou de vaga: {plate} {old_spot} → {spot}")
+                elif not old_spot:
+                    # Sessão sem vaga - atribuir
+                    await conn.execute(
+                        "UPDATE public.parking_sessions SET spot = $1, plate_norm = $2 WHERE id = $3",
+                        spot, plate_norm, existing_session["id"]
+                    )
+                    print(f"[INFO] ✅ Sessão atualizada: {plate} → vaga {spot}")
+                return
+            
+            # Não existe sessão - criar uma nova automaticamente
+            # Buscar user_id se o veículo estiver registado
+            user_id = None
+            vehicle = await conn.fetchrow(
+                "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+                plate_norm
+            )
+            if vehicle:
+                user_id = vehicle["user_id"]
+            
+            # Criar nova sessão
+            new_session = await conn.fetchrow(
+                """
+                INSERT INTO public.parking_sessions (plate, plate_norm, spot, user_id, entry_time, status)
+                VALUES ($1, $2, $3, $4, NOW(), 'open')
+                RETURNING id
+                """,
+                plate, plate_norm, spot, user_id
+            )
+            print(f"[INFO] 🚗 Nova sessão criada automaticamente: {plate} → vaga {spot} (ID: {new_session['id']})")
                 
         except Exception as e:
             print(f"[ERROR] update_session_spot falhou: {e}")
@@ -708,6 +959,18 @@ def _handle_alpr_future(future: Future):
             "expires_at": reservation_info.get("expires_at"),
             "plate": reservation_info.get("plate_raw"),
         }
+    
+    # NOTIFICAR ADMINS E DONOS DE RESERVA SOBRE VIOLAÇÃO
+    if violation and db_pool and event_loop:
+        asyncio.run_coroutine_threadsafe(
+            notify_reservation_violation(
+                spot=name,
+                intruder_plate=event["plate"],
+                reserved_plate=reservation_info.get("plate_raw") if reservation_info else None,
+                reserved_user_id=reservation_info.get("user_id") if reservation_info else None
+            ),
+            event_loop
+        )
 
     with g_plate_lock:
         g_plate_memory[event["spot"]] = {
@@ -888,6 +1151,8 @@ def parking_monitor_loop():
 
         frame_i += 1
 
+        # Reservas são atualizadas quando criadas/canceladas via API (não polling)
+
         recompute = (frame_i == 1) or (frame_i % PROCESS_EVERY_N_FRAMES == 0)
 
         if recompute:
@@ -984,9 +1249,54 @@ def parking_monitor_loop():
 # FASTAPI ENDPOINTS
 # ------------------------------------------------------------
 @app.get("/parking")
-def parking_status():
+async def parking_status():
+    """Retorna estado das vagas, incluindo reservas ativas para hoje."""
     with g_lock:
-        return JSONResponse(g_spot_status)
+        status = dict(g_spot_status)
+    
+    # Buscar reservas ativas para hoje
+    today = datetime.now().date()
+    reservations_today = {}
+    
+    if db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT spot, plate, plate_norm, user_id
+                    FROM public.parking_manual_reservations
+                    WHERE reservation_date = $1
+                    """,
+                    today
+                )
+                for row in rows:
+                    reservations_today[row["spot"]] = {
+                        "plate": row["plate"],
+                        "plate_norm": row["plate_norm"],
+                        "user_id": row["user_id"]
+                    }
+        except Exception as e:
+            print(f"[WARN] Erro ao buscar reservas: {e}")
+    else:
+        # Fallback para cache em memória
+        with g_reservations_lock:
+            for spot, info in g_active_reservations.items():
+                reservations_today[spot] = {
+                    "plate": info.get("plate_raw"),
+                    "plate_norm": info.get("plate_norm")
+                }
+    
+    # Adicionar info de reservas ao status de cada spot
+    for spot_name in status:
+        if spot_name in reservations_today:
+            status[spot_name]["reserved"] = True
+            status[spot_name]["reserved_plate"] = reservations_today[spot_name]["plate"]
+            status[spot_name]["reserved_plate_norm"] = reservations_today[spot_name].get("plate_norm")
+        else:
+            status[spot_name]["reserved"] = False
+            status[spot_name]["reserved_plate"] = None
+    
+    return JSONResponse(status)
 
 
 @app.get("/video_feed")
@@ -3048,8 +3358,36 @@ def login_page():
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
+        # Enviar estado inicial ao conectar (com reservas atualizadas)
+        with g_lock:
+            initial_state = dict(g_spot_status)
+        
+        # Adicionar reservas da BD ao estado inicial
+        if db_pool and initial_state:
+            try:
+                from datetime import date
+                async with db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        SELECT spot, plate, plate_norm
+                        FROM public.parking_manual_reservations
+                        WHERE reservation_date = $1
+                        """,
+                        date.today()
+                    )
+                    for row in rows:
+                        spot = row["spot"]
+                        if spot in initial_state:
+                            initial_state[spot]["reserved"] = True
+                            initial_state[spot]["reserved_plate"] = row["plate"]
+            except Exception as e:
+                print(f"[WARN] Erro ao buscar reservas para WebSocket: {e}")
+        
+        if initial_state:
+            await websocket.send_json(initial_state)
+        
         while True:
-            # nÃ£o esperamos nada do cliente; sÃ³ mantemos a ligaÃ§Ã£o aberta
+            # não esperamos nada do cliente; só mantemos a ligação aberta
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
@@ -3079,8 +3417,20 @@ async def startup_event():
                 set_auth_db_pool(db_pool)
                 print("[INFO] Pool injetado no módulo de autenticação v2.0.")
             
+            # Registar callback para atualizar cache quando há criação/cancelamento de reservas
+            if set_refresh_reservations_callback:
+                set_refresh_reservations_callback(refresh_reservations_cache)
+                print("[INFO] Callback de reservas registado.")
+            
             await refresh_users_cache()
             await refresh_reservations_cache()
+            
+            # Processar multas de reservas expiradas (de dias anteriores)
+            await process_expired_reservations_daily()
+            print("[INFO] Multas de reservas expiradas processadas.")
+            
+            # Iniciar task para processar multas a cada hora
+            asyncio.create_task(periodic_reservation_fine_check())
         except Exception as e:
             print(f"[ERRO] Falha ao conectar à base de dados: {e}")
             db_pool = None
@@ -3090,6 +3440,17 @@ async def startup_event():
     t = threading.Thread(target=parking_monitor_loop, daemon=True)
     t.start()
     print("[INFO] Thread de monitorização iniciada.")
+
+
+async def periodic_reservation_fine_check():
+    """Task que corre a cada hora para verificar reservas expiradas e aplicar multas."""
+    while True:
+        await asyncio.sleep(3600)  # 1 hora
+        try:
+            await process_expired_reservations_daily()
+            print("[INFO] Verificação periódica de multas de reservas concluída.")
+        except Exception as e:
+            print(f"[ERROR] Erro na verificação periódica de multas: {e}")
 
 @app.get("/admin")
 def admin_page(request: Request):

@@ -34,11 +34,25 @@ router = APIRouter()
 
 # Referência ao pool de BD (será injetada pelo main.py)
 db_pool: Optional[asyncpg.Pool] = None
+_refresh_reservations_callback = None
 
 def set_db_pool(pool: asyncpg.Pool):
     """Injetar o pool de BD."""
     global db_pool
     db_pool = pool
+
+def set_refresh_reservations_callback(callback):
+    """Define o callback para atualizar o cache de reservas."""
+    global _refresh_reservations_callback
+    _refresh_reservations_callback = callback
+
+async def _trigger_reservations_refresh():
+    """Chama o callback para atualizar o cache de reservas."""
+    if _refresh_reservations_callback:
+        try:
+            await _refresh_reservations_callback()
+        except Exception as e:
+            print(f"[WARN] Erro ao atualizar cache de reservas: {e}")
 
 
 # =====================================================
@@ -316,6 +330,9 @@ async def create_reservation(payload: ReservationPayload, authorization: Optiona
                 reservation_date
             )
             
+            # Atualizar cache de reservas no main.py
+            await _trigger_reservations_refresh()
+            
             return {
                 "reservation": {
                     "id": row["id"],
@@ -371,18 +388,21 @@ async def list_reservations(authorization: Optional[str] = Header(None)):
 async def cancel_reservation(spot: str, authorization: Optional[str] = Header(None)):
     """
     Cancelar reserva por nome da vaga.
-    Só é possível cancelar reservas futuras (não para hoje).
+    Só é possível cancelar nas primeiras 2 horas após criar a reserva.
     """
     if not db_pool:
         raise HTTPException(status_code=500, detail="Base de dados indisponível")
     
     user = require_auth(authorization)
     
+    # Prazo para cancelamento: 2 horas após criação
+    CANCELLATION_WINDOW_HOURS = 2
+    
     async with db_pool.acquire() as conn:
         # Verificar se a reserva existe e pertence ao utilizador
         row = await conn.fetchrow(
             """
-            SELECT id, reservation_date 
+            SELECT id, reservation_date, created_at 
             FROM public.parking_manual_reservations 
             WHERE spot = $1 AND user_id = $2
             """,
@@ -393,13 +413,28 @@ async def cancel_reservation(spot: str, authorization: Optional[str] = Header(No
         if not row:
             raise HTTPException(status_code=404, detail="Reserva não encontrada")
         
+        # Verificar se ainda está dentro do prazo de cancelamento (2 horas)
+        created_at = row["created_at"]
+        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
+        time_since_creation = now - created_at
+        hours_since_creation = time_since_creation.total_seconds() / 3600
+        
+        if hours_since_creation > CANCELLATION_WINDOW_HOURS:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Prazo de cancelamento expirado. Só pode cancelar nas primeiras {CANCELLATION_WINDOW_HOURS} horas após criar a reserva."
+            )
+        
         # Cancelar
         await conn.execute(
             "DELETE FROM public.parking_manual_reservations WHERE id = $1",
             row["id"]
         )
         
-        return {"message": "Reserva cancelada", "spot": spot}
+        # Atualizar cache de reservas no main.py
+        await _trigger_reservations_refresh()
+        
+        return {"message": "Reserva cancelada com sucesso", "spot": spot}
 
 
 # =====================================================

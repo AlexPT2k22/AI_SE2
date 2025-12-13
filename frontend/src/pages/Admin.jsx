@@ -6,13 +6,53 @@ import StatsCard from '../components/common/StatsCard';
 
 export default function Admin() {
     const [stats, setStats] = React.useState(null);
+    const [notifications, setNotifications] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
+    const wsRef = React.useRef(null);
 
+    // WebSocket para notificações em tempo real (só envia quando há nova violação)
+    React.useEffect(() => {
+        const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                // Verificar se é uma notificação (tem type: "notification")
+                if (message.type === 'notification' && message.data?.notification_type === 'violation_alert') {
+                    const newNotif = {
+                        id: `ws-${Date.now()}`, // ID temporário para WebSocket
+                        title: message.data.title,
+                        body: message.data.body,
+                        notification_type: message.data.notification_type,
+                        created_at: message.data.timestamp,
+                        data: message.data
+                    };
+                    setNotifications(prev => [newNotif, ...prev]);
+                }
+            } catch (e) {
+                // Ignorar mensagens que não são JSON (ex: estado de vagas)
+            }
+        };
+
+        ws.onerror = (err) => console.error('[Admin] WebSocket error:', err);
+        ws.onclose = () => console.log('[Admin] WebSocket disconnected');
+
+        return () => {
+            if (ws.readyState === WebSocket.OPEN) ws.close();
+        };
+    }, []);
+
+    // Carregar dados iniciais
     React.useEffect(() => {
         loadStats();
-        const interval = setInterval(loadStats, 10000); // Refresh every 10s
-        return () => clearInterval(interval);
+        loadNotifications(); // Carregar notificações existentes no início
+
+        // Apenas stats atualizam periodicamente (notificações vêm via WebSocket)
+        const statsInterval = setInterval(loadStats, 30000);
+        return () => clearInterval(statsInterval);
     }, []);
 
     const loadStats = async () => {
@@ -24,6 +64,29 @@ export default function Admin() {
             setError(e.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadNotifications = async () => {
+        try {
+            const data = await api('/api/user/notifications?unread_only=true');
+            setNotifications(data.notifications || []);
+        } catch (e) {
+            console.error('Failed to load notifications:', e);
+        }
+    };
+
+    const markAsRead = async (id) => {
+        // Remover da lista imediatamente (UI responsiva)
+        setNotifications(notifications.filter(n => n.id !== id));
+
+        // Marcar como lida no servidor (se for ID válido do servidor)
+        if (typeof id === 'number' && id > 0) {
+            try {
+                await api(`/api/user/notifications/${id}/read`, { method: 'POST' });
+            } catch (e) {
+                console.error('Failed to mark notification as read:', e);
+            }
         }
     };
 
@@ -58,6 +121,68 @@ export default function Admin() {
                     <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
                         Parking system overview
                     </p>
+                </Card>
+
+                {/* Alerts Section - Always visible */}
+                <Card style={{
+                    padding: 'var(--spacing-6)',
+                    borderLeft: notifications.length > 0 ? '4px solid var(--color-danger)' : '4px solid var(--color-success)',
+                    backgroundColor: notifications.length > 0 ? 'rgba(239, 68, 68, 0.05)' : undefined
+                }}>
+                    <h2 style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'bold', marginBottom: 'var(--spacing-4)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {notifications.length > 0 ? '🚨' : '✅'} Alerts ({notifications.length})
+                    </h2>
+                    {notifications.length === 0 ? (
+                        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                            No active alerts. All systems normal.
+                        </p>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-3)' }}>
+                            {notifications.map((notif) => {
+                                const isViolation = notif.notification_type === 'violation_alert' || notif.notification_type === 'reservation_violation';
+                                const bgColor = isViolation ? 'rgba(239, 68, 68, 0.1)' : 'var(--color-surface)';
+                                const borderColor = isViolation ? 'var(--color-danger)' : 'var(--color-border)';
+
+                                return (
+                                    <div key={notif.id} style={{
+                                        backgroundColor: bgColor,
+                                        border: `1px solid ${borderColor}`,
+                                        borderRadius: 'var(--border-radius-md)',
+                                        padding: 'var(--spacing-4)',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'flex-start'
+                                    }}>
+                                        <div>
+                                            <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                                                {notif.title}
+                                            </div>
+                                            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                                                {notif.body}
+                                            </div>
+                                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
+                                                {new Date(notif.created_at).toLocaleString()}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => markAsRead(notif.id)}
+                                            style={{
+                                                backgroundColor: 'var(--color-surface-hover)',
+                                                border: 'none',
+                                                borderRadius: 'var(--border-radius-sm)',
+                                                padding: '0.5rem 1rem',
+                                                cursor: 'pointer',
+                                                fontSize: 'var(--font-size-sm)',
+                                                color: 'var(--color-text-primary)'
+                                            }}
+                                        >
+                                            ✓ Dismiss
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </Card>
 
                 {/* Statistics Grid */}
