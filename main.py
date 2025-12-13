@@ -309,8 +309,8 @@ async def refresh_users_cache() -> List[Dict[str, Any]]:
 
 
 async def refresh_reservations_cache() -> List[Dict[str, Any]]:
-    """Atualiza cache de reservas ativas (para hoje)."""
-    from datetime import date
+    """Atualiza cache de reservas ativas (para hoje e amanhã)."""
+    from datetime import date, timedelta
     if not db_pool:
         with g_reservations_lock:
             return [
@@ -322,15 +322,20 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
                 }
                 for spot, info in g_active_reservations.items()
             ]
+    
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    
     async with db_pool.acquire() as conn:
-        # Buscar reservas ativas (só para hoje)
+        # Buscar reservas ativas (para hoje E amanhã)
         rows = await conn.fetch(
             """
             SELECT id, spot, plate, plate_norm, user_id, reservation_date, was_used, created_at 
             FROM public.parking_manual_reservations
-            WHERE reservation_date = $1
+            WHERE reservation_date >= $1 AND reservation_date <= $2
             """,
-            date.today()
+            today,
+            tomorrow
         )
     result: List[Dict[str, Any]] = []
     with g_reservations_lock:
@@ -345,13 +350,16 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
                 "was_used": row["was_used"],
                 "created_at": row["created_at"].timestamp() if row["created_at"] else None,
             }
-            g_active_reservations[row["spot"]] = {
+            # Cache key includes date to allow same spot on different days
+            cache_key = f"{row['spot']}_{row['reservation_date'].isoformat()}" if row["reservation_date"] else row["spot"]
+            g_active_reservations[cache_key] = {
                 "plate_raw": row["plate"],
                 "plate_norm": row["plate_norm"],
                 "user_id": row["user_id"],
                 "reservation_date": entry["reservation_date"],
                 "was_used": row["was_used"],
                 "created_at": entry["created_at"],
+                "spot": row["spot"],  # Keep spot name for reference
             }
             result.append(entry)
     return result
@@ -928,7 +936,23 @@ def parking_monitor_loop():
                         occ_final = g_debug_spot_overrides[name]
 
                     spot_meta = spot_lookup.get(name, {})
-                    reservation_info = reservations_snapshot.get(name)
+                    
+                    # Find reservation for this spot for today
+                    # Cache keys are now "spot_date" format (e.g., "vaga01_2024-12-13")
+                    from datetime import date
+                    today_str = date.today().isoformat()
+                    today_cache_key = f"{name}_{today_str}"
+                    reservation_info = reservations_snapshot.get(today_cache_key)
+                    
+                    # Fallback: search by spot name in case of old cache format
+                    if not reservation_info:
+                        for cache_key, res_info in reservations_snapshot.items():
+                            res_spot = res_info.get("spot") or cache_key.split("_")[0]
+                            res_date = res_info.get("reservation_date", "")
+                            if res_spot == name and res_date == today_str:
+                                reservation_info = res_info
+                                break
+                    
                     is_reserved = bool(spot_meta.get("reserved", False) or reservation_info)
 
                     state[name] = {
@@ -994,8 +1018,44 @@ def parking_monitor_loop():
 # ------------------------------------------------------------
 @app.get("/parking")
 def parking_status():
+    """Return current status of all parking spots including today's reservations."""
+    from datetime import date
+    
+    today = date.today().isoformat()
+    
     with g_lock:
-        return JSONResponse(g_spot_status)
+        # Start with current spot status
+        result = {}
+        for spot_name, spot_data in g_spot_status.items():
+            result[spot_name] = dict(spot_data)
+    
+    # Add reservation info for today's reservations
+    with g_reservations_lock:
+        for cache_key, reservation_info in g_active_reservations.items():
+            reservation_date = reservation_info.get("reservation_date", "")
+            spot_name = reservation_info.get("spot") or cache_key.split("_")[0]
+            
+            # Only mark as reserved if reservation is for today
+            if reservation_date == today:
+                if spot_name in result:
+                    result[spot_name]["reserved"] = True
+                    result[spot_name]["reservation"] = {
+                        "plate": reservation_info.get("plate_raw"),
+                        "user_id": reservation_info.get("user_id"),
+                    }
+                else:
+                    # Spot exists in reservations but not in g_spot_status
+                    result[spot_name] = {
+                        "occupied": False,
+                        "prob": 0.0,
+                        "reserved": True,
+                        "reservation": {
+                            "plate": reservation_info.get("plate_raw"),
+                            "user_id": reservation_info.get("user_id"),
+                        }
+                    }
+    
+    return JSONResponse(result)
 
 
 @app.get("/video_feed")
@@ -1200,10 +1260,48 @@ async def delete_reservation(spot: str):
 
 
 # ------------------------------------------------------------
-# JWT HELPER FUNCTIONS (Mobile Authentication)
+# JWT HELPER FUNCTIONS (Mobile Authentication) - NEW UNIFIED SYSTEM
 # ------------------------------------------------------------
+# Note: Old mobile JWT endpoints below are kept for backwards compatibility
+# but the main app uses auth_module.py for /api/auth/* endpoints
+
+async def require_mobile_auth(authorization: Optional[str]) -> Dict[str, Any]:
+    """
+    Universal auth helper for mobile endpoints.
+    Uses the new auth system (user_id in JWT from /api/auth/login).
+    Returns: {"user_id": int, "email": str, "name": str, "role": str, "plate_norms": list}
+    Raises: HTTPException(401) if not authenticated
+    """
+    from auth_module import get_jwt_user as get_jwt_user_new
+    
+    user = get_jwt_user_new(authorization)
+    if not user or not user.get("user_id"):
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    user_id = user["user_id"]
+    plate_norms = []
+    
+    # Get all user's plates from database
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT plate_norm FROM public.parking_user_vehicles WHERE user_id = $1",
+                user_id
+            )
+            plate_norms = [r["plate_norm"] for r in rows]
+    
+    return {
+        "user_id": user_id,
+        "email": user.get("email"),
+        "name": user.get("name"),
+        "role": user.get("role"),
+        "plate_norms": plate_norms,
+    }
+
+
+# Legacy functions for backwards compatibility (old mobile register/login endpoints)
 def generate_jwt_token(user_data: Dict[str, Any]) -> str:
-    """Generate JWT token for mobile app authentication."""
+    """Generate JWT token for mobile app authentication (LEGACY)."""
     payload = {
         "name": user_data["name"],
         "plate": user_data["plate"],
@@ -1215,7 +1313,7 @@ def generate_jwt_token(user_data: Dict[str, Any]) -> str:
 
 
 def verify_jwt_token(token: str) -> Optional[Dict[str, Any]]:
-    """Verify JWT token and return user data."""
+    """Verify JWT token and return user data (LEGACY)."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return {
@@ -1230,7 +1328,7 @@ def verify_jwt_token(token: str) -> Optional[Dict[str, Any]]:
 
 
 def get_jwt_user(authorization: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Extract user from Authorization header (Bearer token)."""
+    """Extract user from Authorization header (Bearer token) (LEGACY)."""
     if not authorization:
         return None
     parts = authorization.split()
@@ -1337,25 +1435,27 @@ async def mobile_me(authorization: Optional[str] = Header(None)):
 @app.get("/api/mobile/sessions")
 async def mobile_sessions(authorization: Optional[str] = Header(None)):
     """Get parking sessions for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
     
     if not db_pool:
         return {"sessions": []}
     
-    # Use plate for matching since plate_norm may not exist in sessions table
+    plate_norms = user["plate_norms"]
+    if not plate_norms:
+        return {"sessions": []}
+    
+    # Get sessions for all user's vehicles
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT id, plate, entry_time, exit_time, spot, 
                    amount_due, amount_paid, status, payment_deadline, notes
             FROM public.parking_sessions
-            WHERE UPPER(REPLACE(REPLACE(plate, '-', ''), ' ', '')) = $1
+            WHERE UPPER(REPLACE(REPLACE(plate, '-', ''), ' ', '')) = ANY($1::text[])
             ORDER BY entry_time DESC
             LIMIT 20
             """,
-            user["plate_norm"],
+            plate_norms,
         )
     
     sessions = []
@@ -1376,17 +1476,68 @@ async def mobile_sessions(authorization: Optional[str] = Header(None)):
     return {"sessions": sessions}
 
 
+@app.get("/api/reservations/check")
+async def check_spot_reservations(spot: str):
+    """Check if a spot has existing reservations for today and tomorrow.
+    
+    Returns which days are already reserved (by any user).
+    """
+    from datetime import date, timedelta
+    
+    resolved_spot = resolve_spot_name(spot)
+    if not resolved_spot:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
+    
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    
+    today_reserved = False
+    tomorrow_reserved = False
+    
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            # Check today
+            today_res = await conn.fetchrow(
+                """
+                SELECT id FROM public.parking_manual_reservations
+                WHERE spot = $1 AND reservation_date = $2
+                """,
+                resolved_spot,
+                today
+            )
+            today_reserved = today_res is not None
+            
+            # Check tomorrow
+            tomorrow_res = await conn.fetchrow(
+                """
+                SELECT id FROM public.parking_manual_reservations
+                WHERE spot = $1 AND reservation_date = $2
+                """,
+                resolved_spot,
+                tomorrow
+            )
+            tomorrow_reserved = tomorrow_res is not None
+    
+    return {
+        "spot": resolved_spot,
+        "today_reserved": today_reserved,
+        "tomorrow_reserved": tomorrow_reserved,
+        "today": today.isoformat(),
+        "tomorrow": tomorrow.isoformat(),
+    }
+
+
 @app.get("/api/mobile/reservations")
 async def mobile_reservations(authorization: Optional[str] = Header(None)):
     """Get reservations for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
     
     records = await refresh_reservations_cache()
+    
+    # Filter by user_id OR plate_norm
     user_reservations = [
         r for r in records 
-        if r.get("plate_norm") == user["plate_norm"]
+        if r.get("user_id") == user["user_id"] or r.get("plate_norm") in user["plate_norms"]
     ]
     return {"reservations": user_reservations}
 
@@ -1403,9 +1554,8 @@ async def mobile_create_reservation(
     """
     from datetime import date, timedelta
     
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     ensure_spot_meta_loaded()
     spot_name = resolve_spot_name(payload.spot)
@@ -1436,12 +1586,32 @@ async def mobile_create_reservation(
 
     if db_pool:
         async with db_pool.acquire() as conn:
-            # Get user_id from plate
-            user_row = await conn.fetchrow(
-                "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1",
-                user["plate_norm"]
+            # Get primary vehicle plate
+            vehicle = await conn.fetchrow(
+                """
+                SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                WHERE user_id = $1 AND is_primary = TRUE
+                LIMIT 1
+                """,
+                user_id
             )
-            user_id = user_row["user_id"] if user_row else None
+            if not vehicle:
+                # Try any vehicle
+                vehicle = await conn.fetchrow(
+                    """
+                    SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                    WHERE user_id = $1
+                    LIMIT 1
+                    """,
+                    user_id
+                )
+            if not vehicle:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Nao tem veiculos registados. Adicione um veiculo nas Definicoes primeiro."
+                )
+            plate = vehicle["plate"]
+            plate_norm = vehicle["plate_norm"]
             
             try:
                 await conn.execute(
@@ -1452,8 +1622,8 @@ async def mobile_create_reservation(
                     """,
                     user_id,
                     spot_name,
-                    user["plate"],
-                    user["plate_norm"],
+                    plate,
+                    plate_norm,
                     reservation_date,
                 )
             except pg_exceptions.UniqueViolationError:
@@ -1462,7 +1632,7 @@ async def mobile_create_reservation(
     
     return {
         "spot": spot_name, 
-        "plate": user["plate"], 
+        "plate": plate, 
         "reservation_date": reservation_date.isoformat(),
         "message": f"Vaga {spot_name} reservada para {'amanhã' if payload.reservation_date == 'tomorrow' else 'hoje'}. Multa de 20€ se não usar."
     }
@@ -1471,36 +1641,66 @@ async def mobile_create_reservation(
 @app.delete("/api/mobile/reservations/{spot_name}")
 async def mobile_cancel_reservation(spot_name: str, authorization: Optional[str] = Header(None)):
     """Cancel a reservation for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    plate_norms = user["plate_norms"]
     
     resolved_spot = resolve_spot_name(spot_name)
     if not resolved_spot:
         raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
     
-    # Check if user owns this reservation
+    # Find reservation in cache - keys are now spot_date format (e.g., "vaga01_2024-12-13")
+    found_key = None
+    reservation = None
+    
     with g_reservations_lock:
-        reservation = g_active_reservations.get(resolved_spot)
-        if not reservation:
+        # Look for any reservation that matches this spot
+        for cache_key, res_info in g_active_reservations.items():
+            res_spot = res_info.get("spot") or cache_key.split("_")[0]
+            if res_spot == resolved_spot:
+                # Check ownership by user_id OR plate_norm
+                owns_reservation = (
+                    res_info.get("user_id") == user_id or
+                    res_info.get("plate_norm") in plate_norms
+                )
+                if owns_reservation:
+                    found_key = cache_key
+                    reservation = res_info
+                    break
+        
+        if not found_key:
             raise HTTPException(status_code=404, detail="Reserva nao encontrada.")
-        if reservation.get("plate_norm") != user["plate_norm"]:
-            raise HTTPException(status_code=403, detail="Esta reserva nao pertence a si.")
+        
+        # Get the reservation date for DB deletion
+        reservation_date_str = reservation.get("reservation_date")
         
         # Remove from memory
-        del g_active_reservations[resolved_spot]
+        del g_active_reservations[found_key]
     
-    # Remove from database
+    # Remove from database - include date to only delete specific reservation
     if db_pool:
         async with db_pool.acquire() as conn:
-            await conn.execute(
-                """
-                DELETE FROM public.parking_manual_reservations 
-                WHERE spot = $1 AND plate_norm = $2
-                """,
-                resolved_spot,
-                user["plate_norm"],
-            )
+            if reservation_date_str:
+                from datetime import datetime
+                reservation_date = datetime.fromisoformat(reservation_date_str).date()
+                await conn.execute(
+                    """
+                    DELETE FROM public.parking_manual_reservations 
+                    WHERE spot = $1 AND user_id = $2 AND reservation_date = $3
+                    """,
+                    resolved_spot,
+                    user_id,
+                    reservation_date,
+                )
+            else:
+                await conn.execute(
+                    """
+                    DELETE FROM public.parking_manual_reservations 
+                    WHERE spot = $1 AND user_id = $2
+                    """,
+                    resolved_spot,
+                    user_id,
+                )
         await refresh_reservations_cache()
     
     return {"message": f"Reserva da vaga {resolved_spot} cancelada com sucesso."}
@@ -1508,9 +1708,8 @@ async def mobile_cancel_reservation(spot_name: str, authorization: Optional[str]
 @app.post("/api/mobile/payments")
 async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] = Header(None)):
     """Process payment for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    plate_norms = user["plate_norms"]
     
     session_id = payload.session_id
     amount = round(payload.amount, 2)
@@ -1534,7 +1733,7 @@ async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] 
         
         # Verify session belongs to user (compare normalized plates)
         session_plate_norm = normalize_plate_text(session["plate"])
-        if session_plate_norm != user["plate_norm"]:
+        if session_plate_norm not in plate_norms:
             raise HTTPException(status_code=403, detail="Sessao nao pertence a este utilizador.")
         
         await conn.execute(
@@ -1587,25 +1786,13 @@ async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] 
 @app.get("/api/mobile/vehicles")
 async def mobile_get_vehicles(authorization: Optional[str] = Header(None)):
     """Get all vehicles for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
     
     async with db_pool.acquire() as conn:
-        # First get user_id from parking_user_vehicles
-        user_row = await conn.fetchrow(
-            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
-            user["plate_norm"]
-        )
-        if not user_row:
-            return {"vehicles": [{"plate": user["plate"], "is_primary": True}]}
-        
-        user_id = user_row["user_id"]
-        
-        # Get all vehicles for this user
         rows = await conn.fetch(
             """
             SELECT plate, plate_norm, is_primary, created_at
@@ -1635,9 +1822,8 @@ class VehiclePayload(BaseModel):
 @app.post("/api/mobile/vehicles")
 async def mobile_add_vehicle(payload: VehiclePayload, authorization: Optional[str] = Header(None)):
     """Add a new vehicle for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
@@ -1646,17 +1832,6 @@ async def mobile_add_vehicle(payload: VehiclePayload, authorization: Optional[st
     plate_norm = normalize_plate_text(plate)
     
     async with db_pool.acquire() as conn:
-        # Get user_id from existing vehicle
-        user_row = await conn.fetchrow(
-            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
-            user["plate_norm"]
-        )
-        
-        if not user_row:
-            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
-        
-        user_id = user_row["user_id"]
-        
         # Check if plate already exists for this user
         existing = await conn.fetchrow(
             "SELECT id FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
@@ -1680,29 +1855,20 @@ async def mobile_add_vehicle(payload: VehiclePayload, authorization: Optional[st
 @app.delete("/api/mobile/vehicles/{plate}")
 async def mobile_delete_vehicle(plate: str, authorization: Optional[str] = Header(None)):
     """Remove a vehicle for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    plate_norms = user["plate_norms"]
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
     
     plate_norm = normalize_plate_text(plate)
     
-    # Can't delete primary vehicle (the one used to login)
-    if plate_norm == user["plate_norm"]:
-        raise HTTPException(status_code=400, detail="Nao pode remover o veiculo principal.")
+    # Can't delete the only vehicle
+    if len(plate_norms) <= 1:
+        raise HTTPException(status_code=400, detail="Nao pode remover o unico veiculo registado.")
     
     async with db_pool.acquire() as conn:
-        user_row = await conn.fetchrow(
-            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
-            user["plate_norm"]
-        )
-        if not user_row:
-            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
-        
-        user_id = user_row["user_id"]
-        
         result = await conn.execute(
             "DELETE FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
             user_id, plate_norm
@@ -1720,24 +1886,13 @@ async def mobile_delete_vehicle(plate: str, authorization: Optional[str] = Heade
 @app.get("/api/mobile/cards")
 async def mobile_get_cards(authorization: Optional[str] = Header(None)):
     """Get all payment cards for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
     
     async with db_pool.acquire() as conn:
-        # Get user_id
-        user_row = await conn.fetchrow(
-            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
-            user["plate_norm"]
-        )
-        if not user_row:
-            return {"cards": []}
-        
-        user_id = user_row["user_id"]
-        
         rows = await conn.fetch(
             """
             SELECT id, card_type, card_last_four, expiry_month, expiry_year, is_default, created_at
@@ -1773,9 +1928,8 @@ class CardPayload(BaseModel):
 @app.post("/api/mobile/cards")
 async def mobile_add_card(payload: CardPayload, authorization: Optional[str] = Header(None)):
     """Add a new payment card for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
@@ -1784,15 +1938,6 @@ async def mobile_add_card(payload: CardPayload, authorization: Optional[str] = H
     last_four = payload.card_number[-4:]
     
     async with db_pool.acquire() as conn:
-        user_row = await conn.fetchrow(
-            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
-            user["plate_norm"]
-        )
-        if not user_row:
-            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
-        
-        user_id = user_row["user_id"]
-        
         # Check if this card already exists
         existing = await conn.fetchrow(
             "SELECT id FROM public.parking_user_cards WHERE user_id = $1 AND last_four = $2",
@@ -1827,23 +1972,13 @@ async def mobile_add_card(payload: CardPayload, authorization: Optional[str] = H
 @app.delete("/api/mobile/cards/{card_id}")
 async def mobile_delete_card(card_id: int, authorization: Optional[str] = Header(None)):
     """Remove a payment card for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     if not db_pool:
         raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
     
     async with db_pool.acquire() as conn:
-        user_row = await conn.fetchrow(
-            "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
-            user["plate_norm"]
-        )
-        if not user_row:
-            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
-        
-        user_id = user_row["user_id"]
-        
         result = await conn.execute(
             "DELETE FROM public.parking_user_cards WHERE id = $1 AND user_id = $2",
             card_id, user_id

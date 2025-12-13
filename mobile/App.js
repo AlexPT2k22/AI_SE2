@@ -1013,6 +1013,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmSpot, setConfirmSpot] = useState(null);
+  const [spotReservationStatus, setSpotReservationStatus] = useState({}); // { today_reserved: bool, tomorrow_reserved: bool }
   
   // Timer state for active sessions
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -1204,9 +1205,21 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     };
   }, []);
 
-  const openReserveModal = (spotName) => {
+  const openReserveModal = async (spotName) => {
     setSelectedSpot(spotName);
     setReserveForToday(true);
+    
+    // Check if this spot already has reservations for today/tomorrow (from any user)
+    try {
+      const res = await api.get('/api/reservations/check', { 
+        params: { spot: spotName } 
+      });
+      setSpotReservationStatus(res.data || {});
+    } catch (e) {
+      console.log('Could not check spot reservation status:', e.message);
+      setSpotReservationStatus({});
+    }
+    
     setShowReserveModal(true);
   };
 
@@ -1640,17 +1653,24 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 style={[
                   styles.durationButton,
                   { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginRight: 8 },
-                  reserveForToday && { borderColor: theme.primary, backgroundColor: theme.primary }
+                  reserveForToday && !spotReservationStatus.today_reserved && { borderColor: theme.primary, backgroundColor: theme.primary },
+                  spotReservationStatus.today_reserved && { opacity: 0.4, backgroundColor: theme.error + '20' }
                 ]}
                 onPress={() => {
+                  if (spotReservationStatus.today_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para hoje.');
+                    return;
+                  }
                   triggerHaptic('light');
                   setReserveForToday(true);
                 }}
+                disabled={spotReservationStatus.today_reserved}
               >
                 <Text style={[
                   styles.durationButtonText,
                   { color: theme.text },
-                  reserveForToday && { color: theme.secondary }
+                  reserveForToday && !spotReservationStatus.today_reserved && { color: theme.secondary },
+                  spotReservationStatus.today_reserved && { color: theme.error, textDecorationLine: 'line-through' }
                 ]}>
                   Hoje
                 </Text>
@@ -1659,17 +1679,24 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 style={[
                   styles.durationButton,
                   { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginLeft: 8 },
-                  !reserveForToday && { borderColor: theme.primary, backgroundColor: theme.primary }
+                  !reserveForToday && !spotReservationStatus.tomorrow_reserved && { borderColor: theme.primary, backgroundColor: theme.primary },
+                  spotReservationStatus.tomorrow_reserved && { opacity: 0.4, backgroundColor: theme.error + '20' }
                 ]}
                 onPress={() => {
+                  if (spotReservationStatus.tomorrow_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para amanhã.');
+                    return;
+                  }
                   triggerHaptic('light');
                   setReserveForToday(false);
                 }}
+                disabled={spotReservationStatus.tomorrow_reserved}
               >
                 <Text style={[
                   styles.durationButtonText,
                   { color: theme.text },
-                  !reserveForToday && { color: theme.secondary }
+                  !reserveForToday && !spotReservationStatus.tomorrow_reserved && { color: theme.secondary },
+                  spotReservationStatus.tomorrow_reserved && { color: theme.error, textDecorationLine: 'line-through' }
                 ]}>
                   Amanhã
                 </Text>
@@ -1691,8 +1718,21 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 <Text style={[styles.modalCancelText, { color: theme.text }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalConfirmBtn, { backgroundColor: theme.primary }]}
+                style={[
+                  styles.modalConfirmBtn, 
+                  { backgroundColor: theme.primary },
+                  (reserveForToday && spotReservationStatus.today_reserved) || (!reserveForToday && spotReservationStatus.tomorrow_reserved) 
+                    ? { opacity: 0.5 } : {}
+                ]}
                 onPress={() => {
+                  if (reserveForToday && spotReservationStatus.today_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para hoje.');
+                    return;
+                  }
+                  if (!reserveForToday && spotReservationStatus.tomorrow_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para amanhã.');
+                    return;
+                  }
                   triggerHaptic('medium');
                   handleReserve();
                 }}
