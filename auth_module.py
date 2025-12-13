@@ -58,6 +58,7 @@ class PaymentMethodPayload(BaseModel):
     expiry_month: int = Field(..., ge=1, le=12)
     expiry_year: int = Field(..., ge=2024)
     is_default: bool = False
+    auto_pay: bool = False  # TRUE = débito automático na saída
 
 
 class ReservationPayload(BaseModel):
@@ -276,7 +277,7 @@ async def get_user_payment_methods(pool: asyncpg.Pool, user_id: int) -> List[Dic
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, card_type, card_last_four, card_holder_name, expiry_month, expiry_year, is_default, created_at
+            SELECT id, card_type, card_last_four, card_holder_name, expiry_month, expiry_year, is_default, auto_pay, created_at
             FROM public.parking_user_payment_methods
             WHERE user_id = $1
             ORDER BY is_default DESC, created_at ASC
@@ -303,9 +304,9 @@ async def add_payment_method(pool: asyncpg.Pool, user_id: int, payload: PaymentM
             row = await conn.fetchrow(
                 """
                 INSERT INTO public.parking_user_payment_methods 
-                    (user_id, card_type, card_last_four, card_holder_name, expiry_month, expiry_year, is_default)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, card_type, card_last_four, card_holder_name, expiry_month, expiry_year, is_default
+                    (user_id, card_type, card_last_four, card_holder_name, expiry_month, expiry_year, is_default, auto_pay)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id, card_type, card_last_four, card_holder_name, expiry_month, expiry_year, is_default, auto_pay
                 """,
                 user_id,
                 payload.card_type,
@@ -313,7 +314,8 @@ async def add_payment_method(pool: asyncpg.Pool, user_id: int, payload: PaymentM
                 payload.card_holder_name.upper(),
                 payload.expiry_month,
                 payload.expiry_year,
-                payload.is_default
+                payload.is_default,
+                payload.auto_pay
             )
             return dict(row)
         except asyncpg.UniqueViolationError:

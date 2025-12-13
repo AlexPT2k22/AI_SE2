@@ -7,6 +7,7 @@ import os
 import cv2
 import numpy as np
 import json
+import math
 import traceback
 from pathlib import Path
 from collections import defaultdict, deque
@@ -1765,21 +1766,105 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
                 detail="Nenhuma sessao aberta encontrada para esta placa."
             )
         
-        # VALIDAR PAGAMENTO
-        if session["amount_paid"] is None or session["amount_paid"] == 0:
-            raise HTTPException(
-                status_code=402,  # Payment Required
-                detail="Pagamento nao efetuado. Use o app para pagar antes de sair."
-            )
+        # CALCULAR VALOR A PAGAR
+        entry_time = session["entry_time"]
+        now = datetime.now(tz=timezone.utc)
+        duration_seconds = (now - entry_time).total_seconds()
+        duration_hours = duration_seconds / 3600
         
-        # VALIDAR DEADLINE DE 10 MINUTOS
-        if session["payment_deadline"]:
-            now = datetime.now(tz=timezone.utc)
+        # Buscar taxa de estacionamento
+        parking_rate = float(os.getenv("PARKING_RATE_PER_HOUR", "1.50"))
+        billing_step = int(os.getenv("PARKING_BILLING_MINUTE_STEP", "1"))
+        
+        # Calcular valor (arredondar para cima por minuto)
+        duration_minutes = math.ceil(duration_seconds / 60)
+        billable_minutes = math.ceil(duration_minutes / billing_step) * billing_step
+        amount_due = (billable_minutes / 60) * parking_rate
+        min_fee = float(os.getenv("PARKING_MINIMUM_FEE", "0"))
+        amount_due = max(amount_due, min_fee)
+        
+        # Atualizar amount_due na sessão
+        await conn.execute(
+            "UPDATE public.parking_sessions SET amount_due = $1 WHERE id = $2",
+            amount_due,
+            session["id"]
+        )
+        
+        print(f"[EXIT] Duração: {duration_minutes} min | Taxa: €{parking_rate}/h | Valor: €{amount_due:.2f}")
+        
+        # VERIFICAR SE JÁ ESTÁ PAGO
+        amount_paid = float(session["amount_paid"]) if session["amount_paid"] else 0
+        
+        if amount_paid >= amount_due:
+            # Já está pago - verificar deadline
+            if session["payment_deadline"]:
+                if now > session["payment_deadline"]:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Pagamento expirado (prazo de 10min excedido). Efetue novo pagamento."
+                    )
+            # Pode sair!
+            print(f"[EXIT] ✅ Já pago (€{amount_paid:.2f}) - permitir saída")
+        else:
+            # NÃO ESTÁ PAGO - TENTAR PAGAMENTO AUTOMÁTICO
+            # Buscar user_id pelo veículo
+            plate_user = await conn.fetchrow(
+                "SELECT user_id FROM public.parking_user_vehicles WHERE plate_norm = $1 LIMIT 1",
+                plate_norm
+            )
+            user_id = plate_user["user_id"] if plate_user else None
             
-            if now > session["payment_deadline"]:
+            auto_payment_done = False
+            
+            if user_id:
+                # Verificar se tem cartão com auto_pay ativado
+                auto_pay_card = await conn.fetchrow(
+                    """
+                    SELECT id, card_type, card_last_four, card_holder_name
+                    FROM public.parking_user_payment_methods
+                    WHERE user_id = $1 AND auto_pay = TRUE
+                    LIMIT 1
+                    """,
+                    user_id
+                )
+                
+                if auto_pay_card:
+                    # FAZER PAGAMENTO AUTOMÁTICO
+                    print(f"[EXIT] 💳 Auto-pay ativado - Cobrando €{amount_due:.2f} do cartão {auto_pay_card['card_type']} ****{auto_pay_card['card_last_four']}")
+                    
+                    # Simular pagamento (em produção seria integração com gateway)
+                    payment_deadline = now + timedelta(minutes=10)
+                    
+                    await conn.execute(
+                        """
+                        UPDATE public.parking_sessions 
+                        SET amount_paid = $1, status = 'paid', payment_deadline = $2
+                        WHERE id = $3
+                        """,
+                        amount_due,
+                        payment_deadline,
+                        session["id"]
+                    )
+                    
+                    # Criar registo de pagamento
+                    await conn.execute(
+                        """
+                        INSERT INTO public.parking_payments (session_id, amount, payment_method, payment_type)
+                        VALUES ($1, $2, $3, 'auto_exit')
+                        """,
+                        session["id"],
+                        amount_due,
+                        f"card_{auto_pay_card['card_last_four']}"
+                    )
+                    
+                    print(f"[EXIT] ✅ Pagamento automático efetuado! Valor: €{amount_due:.2f}")
+                    auto_payment_done = True
+            
+            if not auto_payment_done:
+                # Não tem auto-pay - exigir pagamento manual
                 raise HTTPException(
-                    status_code=403,  # Forbidden
-                    detail="Pagamento expirado (prazo de 10min excedido). Efetue novo pagamento."
+                    status_code=402,
+                    detail=f"Pagamento nao efetuado. Valor a pagar: €{amount_due:.2f}. Use o app para pagar antes de sair."
                 )
         
         session_id = session["id"]

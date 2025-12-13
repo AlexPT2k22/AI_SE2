@@ -403,6 +403,68 @@ async def cancel_reservation(spot: str, authorization: Optional[str] = Header(No
 
 
 # =====================================================
+# SESSÕES DO UTILIZADOR
+# =====================================================
+
+@router.get("/api/user/sessions")
+async def list_user_sessions(
+    status: Optional[str] = None,
+    limit: int = 50,
+    authorization: Optional[str] = Header(None)
+):
+    """Listar sessões do utilizador autenticado."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel")
+    
+    async with db_pool.acquire() as conn:
+        # Filtrar sessões pelo user_id
+        if status:
+            rows = await conn.fetch(
+                """
+                SELECT id, plate, spot, entry_time, exit_time, amount_due, amount_paid, status
+                FROM public.parking_sessions
+                WHERE user_id = $1 AND status = $2
+                ORDER BY entry_time DESC
+                LIMIT $3
+                """,
+                user["user_id"],
+                status,
+                limit
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, plate, spot, entry_time, exit_time, amount_due, amount_paid, status
+                FROM public.parking_sessions
+                WHERE user_id = $1
+                ORDER BY entry_time DESC
+                LIMIT $2
+                """,
+                user["user_id"],
+                limit
+            )
+    
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "id": row["id"],
+            "plate": row["plate"],
+            "spot": row["spot"],
+            "entry_time": row["entry_time"].isoformat() if row["entry_time"] else None,
+            "exit_time": row["exit_time"].isoformat() if row["exit_time"] else None,
+            "amount_due": float(row["amount_due"]) if row["amount_due"] else 0,
+            "amount_paid": float(row["amount_paid"]) if row["amount_paid"] else 0,
+            "status": row["status"]
+        })
+    
+    return {"sessions": sessions}
+
+
+# =====================================================
 # ADMIN ONLY - ESTATÍSTICAS
 # =====================================================
 

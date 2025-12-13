@@ -78,7 +78,8 @@ CREATE TABLE public.parking_user_payment_methods (
     card_holder_name TEXT NOT NULL,    -- Nome no cartão
     expiry_month INTEGER NOT NULL CHECK (expiry_month BETWEEN 1 AND 12),
     expiry_year INTEGER NOT NULL,
-    is_default BOOLEAN DEFAULT FALSE,  -- Cartão principal para débitos automáticos
+    is_default BOOLEAN DEFAULT FALSE,  -- Cartão principal para débitos
+    auto_pay BOOLEAN DEFAULT FALSE,    -- TRUE = débito automático na saída
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     -- Nota: NÃO guardamos o número completo do cartão (segurança)
     -- Para simulação, vamos assumir que os pagamentos são sempre aprovados

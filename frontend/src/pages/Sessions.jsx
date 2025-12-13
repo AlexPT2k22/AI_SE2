@@ -2,15 +2,15 @@
 import React from 'react';
 import { api } from '../api.js';
 import Card from '../components/common/Card';
-import Button from '../components/common/Button';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Sessions() {
+    const { isAdmin } = useAuth();
     const [sessions, setSessions] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
     const [filters, setFilters] = React.useState({
-        status: '',
-        plate: ''
+        status: ''
     });
 
     React.useEffect(() => {
@@ -22,10 +22,14 @@ export default function Sessions() {
         try {
             const params = new URLSearchParams();
             if (filters.status) params.append('status', filters.status);
-            if (filters.plate) params.append('plate', filters.plate);
 
-            const data = await api(`/api/sessions?${params.toString()}`);
-            setSessions(data);
+            // Admin vê todas as sessões, cliente vê apenas as suas
+            const endpoint = isAdmin() ? '/api/sessions' : '/api/user/sessions';
+            const data = await api(`${endpoint}?${params.toString()}`);
+
+            // Normalizar resposta (admin retorna array, user retorna {sessions: []})
+            const sessionsList = Array.isArray(data) ? data : (data.sessions || []);
+            setSessions(sessionsList);
             setError('');
         } catch (e) {
             setError(e.message);
@@ -89,32 +93,6 @@ export default function Sessions() {
                                 <option value="paid">Paid</option>
                                 <option value="cancelled">Cancelled</option>
                             </select>
-                        </div>
-                        <div>
-                            <label style={{
-                                display: 'block',
-                                marginBottom: 'var(--spacing-2)',
-                                fontSize: 'var(--font-size-sm)',
-                                color: 'var(--color-text-secondary)'
-                            }}>
-                                License Plate
-                            </label>
-                            <input
-                                className="input"
-                                style={{ width: '100%' }}
-                                type="text"
-                                placeholder="AA-00-BB"
-                                value={filters.plate}
-                                onChange={(e) => handleFilterChange('plate', e.target.value)}
-                            />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                            <Button
-                                onClick={loadSessions}
-                                style={{ width: '100%' }}
-                            >
-                                Search
-                            </Button>
                         </div>
                     </div>
                 </Card>
