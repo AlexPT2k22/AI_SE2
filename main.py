@@ -2601,6 +2601,160 @@ async def simulate_payment(session_id: int, payload: PaymentPayload):
 
 
 # ------------------------------------------------------------
+# NOTIFICATIONS ENDPOINTS
+# ------------------------------------------------------------
+
+@app.get("/api/notifications")
+async def get_notifications(
+    authorization: Optional[str] = Header(None),
+    limit: int = 50
+):
+    """Get notifications for authenticated user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        return {"notifications": []}
+    
+    async with db_pool.acquire() as conn:
+        # Get user_id from plate_norm
+        user_row = await conn.fetchrow(
+            "SELECT u.id, u.role FROM public.parking_users u "
+            "JOIN public.parking_user_vehicles v ON u.id = v.user_id "
+            "WHERE v.plate_norm = $1 LIMIT 1",
+            user.get("plate_norm")
+        )
+        
+        if not user_row:
+            return {"notifications": []}
+        
+        user_id = user_row["id"]
+        
+        rows = await conn.fetch(
+            """
+            SELECT id, title, body, notification_type, data, is_read, created_at
+            FROM public.parking_notifications
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            user_id, limit
+        )
+    
+    notifications = [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "body": r["body"],
+            "notification_type": r["notification_type"],
+            "data": json.loads(r["data"]) if r["data"] else None,
+            "read": r["is_read"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+    
+    return {"notifications": notifications}
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    authorization: Optional[str] = Header(None)
+):
+    """Mark a single notification as read."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        # Get user_id from plate_norm
+        user_row = await conn.fetchrow(
+            "SELECT u.id FROM public.parking_users u "
+            "JOIN public.parking_user_vehicles v ON u.id = v.user_id "
+            "WHERE v.plate_norm = $1 LIMIT 1",
+            user.get("plate_norm")
+        )
+        
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        result = await conn.execute(
+            "UPDATE public.parking_notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2",
+            notification_id, user_row["id"]
+        )
+        
+        if result == "UPDATE 0":
+            raise HTTPException(status_code=404, detail="Notificacao nao encontrada.")
+    
+    return {"success": True, "notification_id": notification_id}
+
+
+@app.post("/api/notifications/read-all")
+async def mark_all_notifications_read(authorization: Optional[str] = Header(None)):
+    """Mark all notifications as read for the authenticated user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        # Get user_id from plate_norm
+        user_row = await conn.fetchrow(
+            "SELECT u.id FROM public.parking_users u "
+            "JOIN public.parking_user_vehicles v ON u.id = v.user_id "
+            "WHERE v.plate_norm = $1 LIMIT 1",
+            user.get("plate_norm")
+        )
+        
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        await conn.execute(
+            "UPDATE public.parking_notifications SET is_read = TRUE WHERE user_id = $1",
+            user_row["id"]
+        )
+    
+    return {"success": True, "message": "Todas as notificacoes marcadas como lidas."}
+
+
+@app.delete("/api/notifications/clear")
+async def clear_notifications(authorization: Optional[str] = Header(None)):
+    """Delete all notifications for the authenticated user."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        # Get user_id from plate_norm
+        user_row = await conn.fetchrow(
+            "SELECT u.id FROM public.parking_users u "
+            "JOIN public.parking_user_vehicles v ON u.id = v.user_id "
+            "WHERE v.plate_norm = $1 LIMIT 1",
+            user.get("plate_norm")
+        )
+        
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
+        
+        await conn.execute(
+            "DELETE FROM public.parking_notifications WHERE user_id = $1",
+            user_row["id"]
+        )
+    
+    return {"success": True, "message": "Notificacoes eliminadas."}
+
+
+# ------------------------------------------------------------
 # PAYMENT PAGE (Frontend para pagar estacionamento)
 # ------------------------------------------------------------
 @app.get("/payment")

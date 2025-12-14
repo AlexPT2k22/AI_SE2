@@ -257,7 +257,21 @@ async def list_notifications(unread_only: bool = False, authorization: Optional[
     
     user = require_auth(authorization)
     notifications = await get_user_notifications(db_pool, user["user_id"], unread_only)
-    return {"notifications": notifications}
+    
+    # Normalizar campo is_read para read para o frontend
+    normalized = []
+    for n in notifications:
+        normalized.append({
+            "id": n["id"],
+            "title": n["title"],
+            "body": n["body"],
+            "notification_type": n["notification_type"],
+            "data": n.get("data"),
+            "read": n["is_read"],  # Mapear is_read para read
+            "created_at": n["created_at"].isoformat() if n["created_at"] else None
+        })
+    
+    return {"notifications": normalized}
 
 
 @router.post("/api/user/notifications/{notification_id}/read")
@@ -271,6 +285,40 @@ async def mark_as_read(notification_id: int, authorization: Optional[str] = Head
     if not success:
         raise HTTPException(status_code=404, detail="Notificação não encontrada")
     return {"message": "Notificação marcada como lida"}
+
+
+@router.post("/api/user/notifications/read-all")
+async def mark_all_as_read(authorization: Optional[str] = Header(None)):
+    """Marcar todas as notificações como lidas."""
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Base de dados indisponível")
+    
+    user = require_auth(authorization)
+    
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE public.parking_notifications SET is_read = TRUE WHERE user_id = $1",
+            user["user_id"]
+        )
+    
+    return {"message": "Todas as notificações marcadas como lidas"}
+
+
+@router.delete("/api/user/notifications/clear")
+async def clear_all_notifications(authorization: Optional[str] = Header(None)):
+    """Apagar todas as notificações."""
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Base de dados indisponível")
+    
+    user = require_auth(authorization)
+    
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM public.parking_notifications WHERE user_id = $1",
+            user["user_id"]
+        )
+    
+    return {"message": "Notificações eliminadas"}
 
 
 # =====================================================
