@@ -142,6 +142,8 @@ g_alpr_pending_lock = threading.Lock()
 g_alpr_pending = set()
 g_reservations_lock = threading.Lock()
 g_active_reservations: Dict[str, Dict[str, Any]] = {}
+g_recent_violations: Dict[str, float] = {}  # Cache de violações recentes: key -> timestamp
+g_recent_violations_lock = threading.Lock()
 g_users_lock = threading.Lock()
 g_users: Dict[str, Dict[str, Any]] = {}
 db_pool: Optional[asyncpg.Pool] = None
@@ -724,9 +726,27 @@ async def notify_reservation_violation(
 ):
     """
     Notifica admins, dono da reserva e o intruder quando alguém estaciona numa vaga reservada para outro.
+    Inclui deduplicação para evitar notificações repetidas em curto período.
     """
     if not db_pool:
         return
+    
+    # Deduplicação: verificar se já notificámos esta violação recentemente (últimos 60 segundos)
+    violation_key = f"{spot}-{normalize_plate_text(intruder_plate) or 'unknown'}"
+    current_time = time.time()
+    
+    with g_recent_violations_lock:
+        last_notification_time = g_recent_violations.get(violation_key, 0)
+        if current_time - last_notification_time < 60:  # 60 segundos de cooldown
+            print(f"[VIOLATION] ⏳ Skipping duplicate notification for {violation_key} (cooldown)")
+            return
+        # Marcar como notificado
+        g_recent_violations[violation_key] = current_time
+        
+        # Limpar violações antigas (mais de 5 minutos)
+        keys_to_remove = [k for k, t in g_recent_violations.items() if current_time - t > 300]
+        for k in keys_to_remove:
+            del g_recent_violations[k]
     
     try:
         async with db_pool.acquire() as conn:

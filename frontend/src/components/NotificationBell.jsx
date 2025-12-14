@@ -91,21 +91,21 @@ const NotificationBell = () => {
 
                     // Show toast for violation alerts (only if not already shown)
                     if (notification.notification_type === 'violation_alert') {
-                        // Create unique key based on spot, plate and timestamp (rounded to minute)
-                        const timestampMin = notification.timestamp
-                            ? Math.floor(new Date(notification.timestamp).getTime() / 60000)
-                            : Math.floor(Date.now() / 60000);
-                        const toastKey = `${notification.spot}-${notification.intruder_plate}-${timestampMin}`;
+                        // Create unique key based on spot and plate only (no timestamp)
+                        // This ensures we don't show duplicates even if timestamps differ slightly
+                        const toastKey = `${notification.spot}-${notification.intruder_plate}`;
 
                         // Check both DOM and our Set to prevent duplicates
                         if (!shownToastsRef.current.has(toastKey)) {
                             shownToastsRef.current.add(toastKey);
                             showToast(notification, toastKey);
 
-                            // Clean up old keys after 5 minutes
+                            // Clean up key after 60 seconds to allow new notification for same spot
                             setTimeout(() => {
                                 shownToastsRef.current.delete(toastKey);
-                            }, 300000);
+                            }, 60000);
+                        } else {
+                            console.log('[NotificationBell] Skipping duplicate toast for:', toastKey);
                         }
                     }
                 }
