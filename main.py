@@ -325,8 +325,8 @@ async def refresh_users_cache() -> List[Dict[str, Any]]:
 
 
 async def refresh_reservations_cache() -> List[Dict[str, Any]]:
-    """Atualiza cache de reservas ativas (para hoje)."""
-    from datetime import date
+    """Atualiza cache de reservas ativas (para hoje e amanhã)."""
+    from datetime import date, timedelta
     if not db_pool:
         with g_reservations_lock:
             return [
@@ -338,15 +338,20 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
                 }
                 for spot, info in g_active_reservations.items()
             ]
+    
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    
     async with db_pool.acquire() as conn:
-        # Buscar reservas ativas (só para hoje e que ainda não foram usadas)
+        # Buscar reservas ativas (para hoje E amanhã)
         rows = await conn.fetch(
             """
             SELECT id, spot, plate, plate_norm, user_id, reservation_date, was_used, created_at 
             FROM public.parking_manual_reservations
-            WHERE reservation_date = $1 AND was_used = FALSE
+            WHERE reservation_date >= $1 AND reservation_date <= $2
             """,
-            date.today()
+            today,
+            tomorrow
         )
     result: List[Dict[str, Any]] = []
     with g_reservations_lock:
@@ -361,14 +366,16 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
                 "was_used": row["was_used"],
                 "created_at": row["created_at"].timestamp() if row["created_at"] else None,
             }
-            g_active_reservations[row["spot"]] = {
-                "id": row["id"],  # ID da reserva para marcar como usada
+            # Cache key includes date to allow same spot on different days
+            cache_key = f"{row['spot']}_{row['reservation_date'].isoformat()}" if row["reservation_date"] else row["spot"]
+            g_active_reservations[cache_key] = {
                 "plate_raw": row["plate"],
                 "plate_norm": row["plate_norm"],
                 "user_id": row["user_id"],
                 "reservation_date": entry["reservation_date"],
                 "was_used": row["was_used"],
                 "created_at": entry["created_at"],
+                "spot": row["spot"],  # Keep spot name for reference
             }
             result.append(entry)
     return result
@@ -514,21 +521,33 @@ def get_session_user(request: Request) -> Optional[Dict[str, Any]]:
 
 def prune_expired_reservations():
     """
-    Remove reservas do cache que já passaram da data.
-    Reservas manuais usam reservation_date (data), não expires_at (timestamp).
-    Multas são aplicadas pela função process_expired_reservations_daily.
+    Remove reservas de dias anteriores e aplica multa se não foram usadas.
+    NÃO EXPIRA reservas de hoje - só de ontem ou antes.
     """
     from datetime import date
-    today = date.today().isoformat()
+    
+    today = date.today()
     expired: List[str] = []
     
     with g_reservations_lock:
         for spot, info in list(g_active_reservations.items()):
-            reservation_date = info.get("reservation_date")
-            # Só remover do cache se a data da reserva já passou
-            if reservation_date and reservation_date < today:
-                expired.append(spot)
-                g_active_reservations.pop(spot, None)
+            reservation_date_str = info.get("reservation_date")
+            if reservation_date_str:
+                try:
+                    # Parse da data da reserva
+                    res_date = date.fromisoformat(reservation_date_str)
+                    # Só expira reservas de ONTEM ou antes (não de hoje!)
+                    if res_date < today and not info.get("was_used", False):
+                        expired.append(spot)
+                        expired_with_fine.append({
+                            "spot": spot,
+                            "plate": info.get("plate_raw"),
+                            "plate_norm": info.get("plate_norm"),
+                            "reservation_date": reservation_date_str,
+                        })
+                        g_active_reservations.pop(spot, None)
+                except (ValueError, TypeError):
+                    pass  # Data inválida, ignora
     
     # Não apagar da BD nem aplicar multas aqui - isso é feito por process_expired_reservations_daily
 
@@ -553,7 +572,7 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
                     SELECT id FROM public.parking_sessions
                     WHERE plate_norm = $1 
                       AND spot = $2
-                      AND status IN ('open', 'closed')
+                      AND status IN ('open', 'closed', 'paid')
                     LIMIT 1
                     """,
                     res.get("plate_norm"),
@@ -562,6 +581,7 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
                 
                 if not existing:
                     # Não usou a reserva → criar sessão de multa
+                    reservation_date = res.get('reservation_date', 'N/A')
                     await conn.execute(
                         """
                         INSERT INTO public.parking_sessions 
@@ -572,9 +592,9 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
                         res.get("plate_norm"),
                         res.get("spot"),
                         RESERVATION_FINE,
-                        f"Multa: reserva do spot {res.get('spot')} expirou sem ser usada",
+                        f"Multa: reserva de {reservation_date} para vaga {res.get('spot')} não foi utilizada",
                     )
-                    print(f"[INFO] 💰 Multa aplicada: {res.get('plate')} não usou reserva do {res.get('spot')}")
+                    print(f"[INFO] 💰 Multa de {RESERVATION_FINE}€ aplicada: {res.get('plate')} não usou reserva do {res.get('spot')} ({reservation_date})")
             except Exception as e:
                 print(f"[ERROR] Falha ao aplicar multa: {e}")
 
@@ -1246,7 +1266,23 @@ def parking_monitor_loop():
                         occ_final = g_debug_spot_overrides[name]
 
                     spot_meta = spot_lookup.get(name, {})
-                    reservation_info = reservations_snapshot.get(name)
+                    
+                    # Find reservation for this spot for today
+                    # Cache keys are now "spot_date" format (e.g., "vaga01_2024-12-13")
+                    from datetime import date
+                    today_str = date.today().isoformat()
+                    today_cache_key = f"{name}_{today_str}"
+                    reservation_info = reservations_snapshot.get(today_cache_key)
+                    
+                    # Fallback: search by spot name in case of old cache format
+                    if not reservation_info:
+                        for cache_key, res_info in reservations_snapshot.items():
+                            res_spot = res_info.get("spot") or cache_key.split("_")[0]
+                            res_date = res_info.get("reservation_date", "")
+                            if res_spot == name and res_date == today_str:
+                                reservation_info = res_info
+                                break
+                    
                     is_reserved = bool(spot_meta.get("reserved", False) or reservation_info)
 
                     state[name] = {
@@ -1311,54 +1347,45 @@ def parking_monitor_loop():
 # FASTAPI ENDPOINTS
 # ------------------------------------------------------------
 @app.get("/parking")
-async def parking_status():
-    """Retorna estado das vagas, incluindo reservas ativas para hoje."""
+def parking_status():
+    """Return current status of all parking spots including today's reservations."""
+    from datetime import date
+    
+    today = date.today().isoformat()
+    
     with g_lock:
-        status = dict(g_spot_status)
+        # Start with current spot status
+        result = {}
+        for spot_name, spot_data in g_spot_status.items():
+            result[spot_name] = dict(spot_data)
     
-    # Buscar reservas ativas para hoje
-    today = datetime.now().date()
-    reservations_today = {}
-    
-    if db_pool:
-        try:
-            async with db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT spot, plate, plate_norm, user_id
-                    FROM public.parking_manual_reservations
-                    WHERE reservation_date = $1 AND was_used = FALSE
-                    """,
-                    today
-                )
-                for row in rows:
-                    reservations_today[row["spot"]] = {
-                        "plate": row["plate"],
-                        "plate_norm": row["plate_norm"],
-                        "user_id": row["user_id"]
+    # Add reservation info for today's reservations
+    with g_reservations_lock:
+        for cache_key, reservation_info in g_active_reservations.items():
+            reservation_date = reservation_info.get("reservation_date", "")
+            spot_name = reservation_info.get("spot") or cache_key.split("_")[0]
+            
+            # Only mark as reserved if reservation is for today
+            if reservation_date == today:
+                if spot_name in result:
+                    result[spot_name]["reserved"] = True
+                    result[spot_name]["reservation"] = {
+                        "plate": reservation_info.get("plate_raw"),
+                        "user_id": reservation_info.get("user_id"),
                     }
-        except Exception as e:
-            print(f"[WARN] Erro ao buscar reservas: {e}")
-    else:
-        # Fallback para cache em memória
-        with g_reservations_lock:
-            for spot, info in g_active_reservations.items():
-                reservations_today[spot] = {
-                    "plate": info.get("plate_raw"),
-                    "plate_norm": info.get("plate_norm")
-                }
+                else:
+                    # Spot exists in reservations but not in g_spot_status
+                    result[spot_name] = {
+                        "occupied": False,
+                        "prob": 0.0,
+                        "reserved": True,
+                        "reservation": {
+                            "plate": reservation_info.get("plate_raw"),
+                            "user_id": reservation_info.get("user_id"),
+                        }
+                    }
     
-    # Adicionar info de reservas ao status de cada spot
-    for spot_name in status:
-        if spot_name in reservations_today:
-            status[spot_name]["reserved"] = True
-            status[spot_name]["reserved_plate"] = reservations_today[spot_name]["plate"]
-            status[spot_name]["reserved_plate_norm"] = reservations_today[spot_name].get("plate_norm")
-        else:
-            status[spot_name]["reserved"] = False
-            status[spot_name]["reserved_plate"] = None
-    
-    return JSONResponse(status)
+    return JSONResponse(result)
 
 
 @app.get("/video_feed")
@@ -1424,7 +1451,8 @@ async def debug_list_overrides():
 
 class ReservationPayload(BaseModel):
     spot: str = Field(..., min_length=1)
-    duration_hours: Optional[int] = Field(default=12, ge=1, le=24)  # Default 12h, max 24h
+    reservation_date: str = Field(default="today")  # "today" or "tomorrow"
+    plate: Optional[str] = None  # Optional: which vehicle to use
 
 
 class AuthPayload(BaseModel):
@@ -1563,10 +1591,48 @@ async def delete_reservation(spot: str):
 
 
 # ------------------------------------------------------------
-# JWT HELPER FUNCTIONS (Mobile Authentication)
+# JWT HELPER FUNCTIONS (Mobile Authentication) - NEW UNIFIED SYSTEM
 # ------------------------------------------------------------
+# Note: Old mobile JWT endpoints below are kept for backwards compatibility
+# but the main app uses auth_module.py for /api/auth/* endpoints
+
+async def require_mobile_auth(authorization: Optional[str]) -> Dict[str, Any]:
+    """
+    Universal auth helper for mobile endpoints.
+    Uses the new auth system (user_id in JWT from /api/auth/login).
+    Returns: {"user_id": int, "email": str, "name": str, "role": str, "plate_norms": list}
+    Raises: HTTPException(401) if not authenticated
+    """
+    from auth_module import get_jwt_user as get_jwt_user_new
+    
+    user = get_jwt_user_new(authorization)
+    if not user or not user.get("user_id"):
+        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    
+    user_id = user["user_id"]
+    plate_norms = []
+    
+    # Get all user's plates from database
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT plate_norm FROM public.parking_user_vehicles WHERE user_id = $1",
+                user_id
+            )
+            plate_norms = [r["plate_norm"] for r in rows]
+    
+    return {
+        "user_id": user_id,
+        "email": user.get("email"),
+        "name": user.get("name"),
+        "role": user.get("role"),
+        "plate_norms": plate_norms,
+    }
+
+
+# Legacy functions for backwards compatibility (old mobile register/login endpoints)
 def generate_jwt_token(user_data: Dict[str, Any]) -> str:
-    """Generate JWT token for mobile app authentication."""
+    """Generate JWT token for mobile app authentication (LEGACY)."""
     payload = {
         "name": user_data["name"],
         "plate": user_data["plate"],
@@ -1578,7 +1644,7 @@ def generate_jwt_token(user_data: Dict[str, Any]) -> str:
 
 
 def verify_jwt_token(token: str) -> Optional[Dict[str, Any]]:
-    """Verify JWT token and return user data."""
+    """Verify JWT token and return user data (LEGACY)."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return {
@@ -1593,7 +1659,7 @@ def verify_jwt_token(token: str) -> Optional[Dict[str, Any]]:
 
 
 def get_jwt_user(authorization: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Extract user from Authorization header (Bearer token)."""
+    """Extract user from Authorization header (Bearer token) (LEGACY)."""
     if not authorization:
         return None
     parts = authorization.split()
@@ -1639,7 +1705,7 @@ async def mobile_register(payload: MobileAuthPayload):
                 plate_norm
             )
             if existing:
-                raise HTTPException(status_code=400, detail="Placa ja registada.")
+                raise HTTPException(status_code=400, detail="Matrícula ja registada.")
             
             # Create user
             user_row = await conn.fetchrow(
@@ -1677,7 +1743,7 @@ async def mobile_login(payload: MobileAuthPayload):
     """Login user and return JWT token for mobile app."""
     plate_norm = normalize_plate_text(payload.plate)
     if not plate_norm:
-        raise HTTPException(status_code=400, detail="Placa invalida.")
+        raise HTTPException(status_code=400, detail="Matrícula invalida.")
     user = await ensure_user_loaded(plate_norm)
     if not user:
         raise HTTPException(status_code=404, detail="Utilizador nao encontrado.")
@@ -1700,25 +1766,27 @@ async def mobile_me(authorization: Optional[str] = Header(None)):
 @app.get("/api/mobile/sessions")
 async def mobile_sessions(authorization: Optional[str] = Header(None)):
     """Get parking sessions for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
     
     if not db_pool:
         return {"sessions": []}
     
-    # Use plate for matching since plate_norm may not exist in sessions table
+    plate_norms = user["plate_norms"]
+    if not plate_norms:
+        return {"sessions": []}
+    
+    # Get sessions for all user's vehicles
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT id, plate, entry_time, exit_time, spot, 
                    amount_due, amount_paid, status, payment_deadline, notes
             FROM public.parking_sessions
-            WHERE UPPER(REPLACE(REPLACE(plate, '-', ''), ' ', '')) = $1
+            WHERE UPPER(REPLACE(REPLACE(plate, '-', ''), ' ', '')) = ANY($1::text[])
             ORDER BY entry_time DESC
             LIMIT 20
             """,
-            user["plate_norm"],
+            plate_norms,
         )
     
     sessions = []
@@ -1739,17 +1807,68 @@ async def mobile_sessions(authorization: Optional[str] = Header(None)):
     return {"sessions": sessions}
 
 
+@app.get("/api/reservations/check")
+async def check_spot_reservations(spot: str):
+    """Check if a spot has existing reservations for today and tomorrow.
+    
+    Returns which days are already reserved (by any user).
+    """
+    from datetime import date, timedelta
+    
+    resolved_spot = resolve_spot_name(spot)
+    if not resolved_spot:
+        raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
+    
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    
+    today_reserved = False
+    tomorrow_reserved = False
+    
+    if db_pool:
+        async with db_pool.acquire() as conn:
+            # Check today
+            today_res = await conn.fetchrow(
+                """
+                SELECT id FROM public.parking_manual_reservations
+                WHERE spot = $1 AND reservation_date = $2
+                """,
+                resolved_spot,
+                today
+            )
+            today_reserved = today_res is not None
+            
+            # Check tomorrow
+            tomorrow_res = await conn.fetchrow(
+                """
+                SELECT id FROM public.parking_manual_reservations
+                WHERE spot = $1 AND reservation_date = $2
+                """,
+                resolved_spot,
+                tomorrow
+            )
+            tomorrow_reserved = tomorrow_res is not None
+    
+    return {
+        "spot": resolved_spot,
+        "today_reserved": today_reserved,
+        "tomorrow_reserved": tomorrow_reserved,
+        "today": today.isoformat(),
+        "tomorrow": tomorrow.isoformat(),
+    }
+
+
 @app.get("/api/mobile/reservations")
 async def mobile_reservations(authorization: Optional[str] = Header(None)):
     """Get reservations for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
     
     records = await refresh_reservations_cache()
+    
+    # Filter by user_id OR plate_norm
     user_reservations = [
         r for r in records 
-        if r.get("plate_norm") == user["plate_norm"]
+        if r.get("user_id") == user["user_id"] or r.get("plate_norm") in user["plate_norms"]
     ]
     return {"reservations": user_reservations}
 
@@ -1759,10 +1878,15 @@ async def mobile_create_reservation(
     payload: ReservationPayload, 
     authorization: Optional[str] = Header(None)
 ):
-    """Create reservation for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    """Create reservation for authenticated mobile user.
+    
+    Uses day-based reservations: 'today' or 'tomorrow'.
+    If user doesn't show up, they get a 20€ fine.
+    """
+    from datetime import date, timedelta
+    
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
     
     ensure_spot_meta_loaded()
     spot_name = resolve_spot_name(payload.spot)
@@ -1777,72 +1901,153 @@ async def mobile_create_reservation(
         spot_state = g_spot_status.get(spot_name)
     if spot_state and spot_state.get("occupied"):
         raise HTTPException(status_code=400, detail="Nao e possivel reservar uma vaga ocupada.")
-
+    
+    # Determine reservation date
+    today = date.today()
+    if payload.reservation_date == "tomorrow":
+        reservation_date = today + timedelta(days=1)
+    else:
+        reservation_date = today  # Default: today
+    
     prune_expired_reservations()
-
-    RESERVATION_EXPIRY_HOURS = payload.duration_hours or 12
-    expires_at = time.time() + RESERVATION_EXPIRY_HOURS * 3600
 
     with g_reservations_lock:
         if spot_name in g_active_reservations:
             raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
 
     if db_pool:
-        expires_dt = datetime.fromtimestamp(expires_at, tz=timezone.utc)
         async with db_pool.acquire() as conn:
+            # If plate is specified in payload, validate it belongs to user
+            if payload.plate:
+                vehicle = await conn.fetchrow(
+                    """
+                    SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                    WHERE user_id = $1 AND plate = $2
+                    """,
+                    user_id,
+                    payload.plate
+                )
+                if not vehicle:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Veiculo nao encontrado ou nao pertence a si."
+                    )
+            else:
+                # Get primary vehicle plate
+                vehicle = await conn.fetchrow(
+                    """
+                    SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                    WHERE user_id = $1 AND is_primary = TRUE
+                    LIMIT 1
+                    """,
+                    user_id
+                )
+                if not vehicle:
+                    # Try any vehicle
+                    vehicle = await conn.fetchrow(
+                        """
+                        SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                        WHERE user_id = $1
+                        LIMIT 1
+                        """,
+                        user_id
+                    )
+            if not vehicle:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Nao tem veiculos registados. Adicione um veiculo nas Definicoes primeiro."
+                )
+            plate = vehicle["plate"]
+            plate_norm = vehicle["plate_norm"]
+            
             try:
                 await conn.execute(
                     """
                     INSERT INTO public.parking_manual_reservations
-                        (spot, plate, plate_norm, reserved_by, reserved_until)
+                        (user_id, spot, plate, plate_norm, reservation_date)
                     VALUES ($1, $2, $3, $4, $5)
                     """,
+                    user_id,
                     spot_name,
-                    user["plate"],
-                    user["plate_norm"],
-                    user["name"],
-                    expires_dt,
+                    plate,
+                    plate_norm,
+                    reservation_date,
                 )
             except pg_exceptions.UniqueViolationError:
-                raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva ativa.")
+                raise HTTPException(status_code=409, detail="Esta vaga ja possui uma reserva para este dia.")
         await refresh_reservations_cache()
     
-    return {"spot": spot_name, "plate": user["plate"], "expires_at": expires_at, "duration_hours": RESERVATION_EXPIRY_HOURS}
+    return {
+        "spot": spot_name, 
+        "plate": plate, 
+        "reservation_date": reservation_date.isoformat(),
+        "message": f"Vaga {spot_name} reservada para {'amanhã' if payload.reservation_date == 'tomorrow' else 'hoje'}. Multa de 20€ se não usar."
+    }
 
 
 @app.delete("/api/mobile/reservations/{spot_name}")
 async def mobile_cancel_reservation(spot_name: str, authorization: Optional[str] = Header(None)):
     """Cancel a reservation for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    plate_norms = user["plate_norms"]
     
     resolved_spot = resolve_spot_name(spot_name)
     if not resolved_spot:
         raise HTTPException(status_code=404, detail="Vaga nao encontrada.")
     
-    # Check if user owns this reservation
+    # Find reservation in cache - keys are now spot_date format (e.g., "vaga01_2024-12-13")
+    found_key = None
+    reservation = None
+    
     with g_reservations_lock:
-        reservation = g_active_reservations.get(resolved_spot)
-        if not reservation:
+        # Look for any reservation that matches this spot
+        for cache_key, res_info in g_active_reservations.items():
+            res_spot = res_info.get("spot") or cache_key.split("_")[0]
+            if res_spot == resolved_spot:
+                # Check ownership by user_id OR plate_norm
+                owns_reservation = (
+                    res_info.get("user_id") == user_id or
+                    res_info.get("plate_norm") in plate_norms
+                )
+                if owns_reservation:
+                    found_key = cache_key
+                    reservation = res_info
+                    break
+        
+        if not found_key:
             raise HTTPException(status_code=404, detail="Reserva nao encontrada.")
-        if reservation.get("plate_norm") != user["plate_norm"]:
-            raise HTTPException(status_code=403, detail="Esta reserva nao pertence a si.")
+        
+        # Get the reservation date for DB deletion
+        reservation_date_str = reservation.get("reservation_date")
         
         # Remove from memory
-        del g_active_reservations[resolved_spot]
+        del g_active_reservations[found_key]
     
-    # Remove from database
+    # Remove from database - include date to only delete specific reservation
     if db_pool:
         async with db_pool.acquire() as conn:
-            await conn.execute(
-                """
-                DELETE FROM public.parking_manual_reservations 
-                WHERE spot = $1 AND plate_norm = $2
-                """,
-                resolved_spot,
-                user["plate_norm"],
-            )
+            if reservation_date_str:
+                from datetime import datetime
+                reservation_date = datetime.fromisoformat(reservation_date_str).date()
+                await conn.execute(
+                    """
+                    DELETE FROM public.parking_manual_reservations 
+                    WHERE spot = $1 AND user_id = $2 AND reservation_date = $3
+                    """,
+                    resolved_spot,
+                    user_id,
+                    reservation_date,
+                )
+            else:
+                await conn.execute(
+                    """
+                    DELETE FROM public.parking_manual_reservations 
+                    WHERE spot = $1 AND user_id = $2
+                    """,
+                    resolved_spot,
+                    user_id,
+                )
         await refresh_reservations_cache()
     
     return {"message": f"Reserva da vaga {resolved_spot} cancelada com sucesso."}
@@ -1850,9 +2055,8 @@ async def mobile_cancel_reservation(spot_name: str, authorization: Optional[str]
 @app.post("/api/mobile/payments")
 async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] = Header(None)):
     """Process payment for authenticated mobile user."""
-    user = get_jwt_user(authorization)
-    if not user:
-        raise HTTPException(status_code=401, detail="Token invalido ou expirado.")
+    user = await require_mobile_auth(authorization)
+    plate_norms = user["plate_norms"]
     
     session_id = payload.session_id
     amount = round(payload.amount, 2)
@@ -1876,17 +2080,18 @@ async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] 
         
         # Verify session belongs to user (compare normalized plates)
         session_plate_norm = normalize_plate_text(session["plate"])
-        if session_plate_norm != user["plate_norm"]:
+        if session_plate_norm not in plate_norms:
             raise HTTPException(status_code=403, detail="Sessao nao pertence a este utilizador.")
         
         await conn.execute(
             """
-            INSERT INTO public.parking_payments (session_id, amount, method)
-            VALUES ($1, $2, $3)
+            INSERT INTO public.parking_payments (session_id, amount, method, payment_type)
+            VALUES ($1, $2, $3, $4)
             """,
             session_id,
             amount,
             method,
+            'parking',
         )
         
         current_paid = session["amount_paid"] or 0
@@ -1923,6 +2128,248 @@ async def mobile_payments(payload: PaymentPayload, authorization: Optional[str] 
 
 
 # ------------------------------------------------------------
+# Mobile Vehicles Management
+# ------------------------------------------------------------
+@app.get("/api/mobile/vehicles")
+async def mobile_get_vehicles(authorization: Optional[str] = Header(None)):
+    """Get all vehicles for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT plate, plate_norm, is_primary, created_at
+            FROM public.parking_user_vehicles
+            WHERE user_id = $1
+            ORDER BY is_primary DESC, created_at ASC
+            """,
+            user_id
+        )
+        
+        vehicles = [
+            {
+                "plate": row["plate"],
+                "is_primary": row["is_primary"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None
+            }
+            for row in rows
+        ]
+        
+    return {"vehicles": vehicles}
+
+
+class VehiclePayload(BaseModel):
+    plate: str = Field(..., min_length=1)
+
+
+@app.post("/api/mobile/vehicles")
+async def mobile_add_vehicle(payload: VehiclePayload, authorization: Optional[str] = Header(None)):
+    """Add a new vehicle for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    plate = payload.plate.strip().upper()
+    plate_norm = normalize_plate_text(plate)
+    
+    async with db_pool.acquire() as conn:
+        # Check if plate already exists for this user
+        existing = await conn.fetchrow(
+            "SELECT id FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="Este veiculo ja esta registado.")
+        
+        # Add vehicle
+        await conn.execute(
+            """
+            INSERT INTO public.parking_user_vehicles (user_id, plate, plate_norm, is_primary)
+            VALUES ($1, $2, $3, FALSE)
+            """,
+            user_id, plate, plate_norm
+        )
+    
+    return {"plate": plate, "message": "Veiculo adicionado com sucesso."}
+
+
+@app.put("/api/mobile/vehicles/{plate}/set-primary")
+async def mobile_set_primary_vehicle(plate: str, authorization: Optional[str] = Header(None)):
+    """Set a vehicle as the primary vehicle for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    plate_norm = normalize_plate_text(plate)
+    
+    async with db_pool.acquire() as conn:
+        # Verify vehicle belongs to user
+        vehicle = await conn.fetchrow(
+            "SELECT id FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Veiculo nao encontrado.")
+        
+        # Reset all vehicles to non-primary
+        await conn.execute(
+            "UPDATE public.parking_user_vehicles SET is_primary = FALSE WHERE user_id = $1",
+            user_id
+        )
+        
+        # Set this one as primary
+        await conn.execute(
+            "UPDATE public.parking_user_vehicles SET is_primary = TRUE WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+    
+    return {"plate": plate, "is_primary": True, "message": "Veiculo definido como principal."}
+
+
+@app.delete("/api/mobile/vehicles/{plate}")
+async def mobile_delete_vehicle(plate: str, authorization: Optional[str] = Header(None)):
+    """Remove a vehicle for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    plate_norms = user["plate_norms"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    plate_norm = normalize_plate_text(plate)
+    
+    # Can't delete the only vehicle
+    if len(plate_norms) <= 1:
+        raise HTTPException(status_code=400, detail="Nao pode remover o unico veiculo registado.")
+    
+    async with db_pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+        
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Veiculo nao encontrado.")
+    
+    return {"plate": plate, "message": "Veiculo removido com sucesso."}
+
+
+# ------------------------------------------------------------
+# Mobile Payment Cards Management
+# ------------------------------------------------------------
+@app.get("/api/mobile/cards")
+async def mobile_get_cards(authorization: Optional[str] = Header(None)):
+    """Get all payment cards for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, card_type, card_last_four, expiry_month, expiry_year, is_default, created_at
+            FROM public.parking_user_payment_methods
+            WHERE user_id = $1
+            ORDER BY is_default DESC, created_at ASC
+            """,
+            user_id
+        )
+        
+        cards = [
+            {
+                "id": row["id"],
+                "card_type": row["card_type"],
+                "last_four": row["card_last_four"],
+                "expiry": f"{row['expiry_month']:02d}/{row['expiry_year'] % 100:02d}" if row["expiry_month"] else None,
+                "is_default": row["is_default"]
+            }
+            for row in rows
+        ]
+    
+    return {"cards": cards}
+
+
+class CardPayload(BaseModel):
+    card_number: str = Field(..., min_length=13, max_length=19)
+    expiry_month: int = Field(..., ge=1, le=12)
+    expiry_year: int = Field(..., ge=2024)
+    cvv: str = Field(..., min_length=3, max_length=4)
+    card_type: str = Field(default="visa")  # visa, mastercard, etc.
+
+
+@app.post("/api/mobile/cards")
+async def mobile_add_card(payload: CardPayload, authorization: Optional[str] = Header(None)):
+    """Add a new payment card for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    # Get last 4 digits only (never store full card number)
+    last_four = payload.card_number[-4:]
+    
+    async with db_pool.acquire() as conn:
+        # Check if this card already exists
+        existing = await conn.fetchrow(
+            "SELECT id FROM public.parking_user_cards WHERE user_id = $1 AND last_four = $2",
+            user_id, last_four
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail="Este cartao ja esta registado.")
+        
+        # Check if this is the first card (make it default)
+        card_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM public.parking_user_cards WHERE user_id = $1",
+            user_id
+        )
+        is_default = card_count == 0
+        
+        await conn.execute(
+            """
+            INSERT INTO public.parking_user_cards 
+                (user_id, card_type, last_four, expiry_month, expiry_year, is_default)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            user_id, payload.card_type, last_four, payload.expiry_month, payload.expiry_year, is_default
+        )
+    
+    return {
+        "last_four": last_four,
+        "card_type": payload.card_type,
+        "message": "Cartao adicionado com sucesso."
+    }
+
+
+@app.delete("/api/mobile/cards/{card_id}")
+async def mobile_delete_card(card_id: int, authorization: Optional[str] = Header(None)):
+    """Remove a payment card for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    async with db_pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM public.parking_user_cards WHERE id = $1 AND user_id = $2",
+            card_id, user_id
+        )
+        
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Cartao nao encontrado.")
+    
+    return {"card_id": card_id, "message": "Cartao removido com sucesso."}
 # Função auxiliar para processar imagem e detectar matrícula
 # ------------------------------------------------------------
 async def process_plate_image(image_bytes: bytes) -> Tuple[Optional[str], Optional[bytes]]:
@@ -2114,8 +2561,8 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
         )
         
         # DEBUG: Ver o que está a ser procurado
-        print(f"[EXIT DEBUG] Placa detectada: {plate}")
-        print(f"[EXIT DEBUG] Placa normalizada: {plate_norm}")
+        print(f"[EXIT DEBUG] Matrícula detectada: {plate}")
+        print(f"[EXIT DEBUG] Matrícula normalizada: {plate_norm}")
         print(f"[EXIT DEBUG] Sessão encontrada: {session}")
         
         if not session:
@@ -3215,7 +3662,7 @@ def live_page():
                     text += " [RESERVADO]";
                 }
                 if (plate) {
-                    text += " | Placa: " + plate;
+                    text += " | Matrícula: " + plate;
                 }
                 if (violation) {
                     text += " [VIOLACAO]";
@@ -3517,7 +3964,7 @@ def login_page():
             </div>
             <form id="auth-form">
                 <label>Nome<input id="auth-name" required /></label>
-                <label>Placa<input id="auth-plate" required /></label>
+                <label>Matrícula<input id="auth-plate" required /></label>
                 <button type="submit">Continuar</button>
             </form>
             <div id="message"></div>
@@ -3737,7 +4184,7 @@ def admin_page(request: Request):
                 div.className = "spot";
                 let text = name + " -> " + (info.occupied ? "OCUPADO" : "LIVRE") + " (" + (info.prob !== undefined ? Number(info.prob).toFixed(2) : "--") + ")";
                 if (info.reserved) text += " [RESERVADO]";
-                if (info.plate) text += " | Placa: " + info.plate;
+                if (info.plate) text += " | Matrícula: " + info.plate;
                 if (info.violation) text += " [VIOLACAO]";
                 if (info.reservation && info.reservation.plate) text += " @(" + info.reservation.plate + ")";
                 div.innerText = text;
@@ -3787,7 +4234,7 @@ def admin_page(request: Request):
                     div.className = "reservation-item";
                     const exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "";
                     const plateInfo = res.plate ? res.plate : "N/D";
-                    div.innerHTML = `<span><strong>${{res.spot}}</strong> -> Placa: ${{plateInfo}}<br/><small>expira ${{exp}}</small></span><button type="button" onclick="cancelReservation('${{res.spot}}')">Cancelar</button>`;
+                    div.innerHTML = `<span><strong>${{res.spot}}</strong> -> Matrícula: ${{plateInfo}}<br/><small>expira ${{exp}}</small></span><button type="button" onclick="cancelReservation('${{res.spot}}')">Cancelar</button>`;
                     reservationsDiv.appendChild(div);
                 }});
             }} catch (err) {{

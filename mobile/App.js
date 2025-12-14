@@ -110,6 +110,9 @@ const MoonIcon = ({ size = 24, color = '#666666' }) => (
 //const API_BASE_URL = 'http://10.0.2.2:8000'; // Android emulator
 const API_BASE_URL = 'http://192.168.68.125:8000'; // Replace with your IP for physical device
 
+// WebSocket URL (derived from API URL)
+const WS_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws';
+
 // Colors - Light Theme (matching frontend)
 const lightColors = {
   primary: '#97d700',          // Lime Green
@@ -366,8 +369,9 @@ api.interceptors.request.use(async (config) => {
 
 // Login Screen Component
 const LoginScreen = ({ onLogin, theme }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [plate, setPlate] = useState('');
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -375,8 +379,13 @@ const LoginScreen = ({ onLogin, theme }) => {
   const handleSubmit = async () => {
     triggerHaptic('medium');
     
-    if (!name.trim() || !plate.trim()) {
-      setError('Preencha todos os campos');
+    if (!email.trim() || !password.trim()) {
+      setError('Preencha email e password');
+      return;
+    }
+    
+    if (isRegister && !name.trim()) {
+      setError('Preencha o nome');
       return;
     }
 
@@ -384,19 +393,30 @@ const LoginScreen = ({ onLogin, theme }) => {
     setError('');
 
     try {
-      const endpoint = isRegister ? '/api/mobile/register' : '/api/mobile/login';
-      const response = await api.post(endpoint, {
-        name: name.trim(),
-        plate: plate.trim().toUpperCase(),
-      });
+      let response;
+      if (isRegister) {
+        // Register with email, password, name
+        response = await api.post('/api/auth/register', {
+          email: email.trim().toLowerCase(),
+          password: password,
+          full_name: name.trim(),
+        });
+      } else {
+        // Login with email (identifier) + password
+        response = await api.post('/api/auth/login', {
+          identifier: email.trim().toLowerCase(),
+          password: password,
+        });
+      }
 
       await AsyncStorage.setItem('token', response.data.token);
       await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
       showToast('success', isRegister ? 'Conta criada!' : 'Bem-vindo!', `Olá, ${response.data.user.name}`);
       onLogin(response.data.user);
     } catch (e) {
-      setError(e.response?.data?.detail || e.message || 'Erro ao conectar');
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha na autenticação');
+      const errorMsg = e.response?.data?.detail || e.message || 'Erro ao conectar';
+      setError(errorMsg);
+      showToast('error', 'Erro', errorMsg);
     } finally {
       setLoading(false);
     }
@@ -421,24 +441,41 @@ const LoginScreen = ({ onLogin, theme }) => {
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardTitle, { color: theme.text }]}>{isRegister ? 'Criar Conta' : 'Entrar'}</Text>
             
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Nome completo</Text>
+            {isRegister && (
+              <>
+                <Text style={[styles.label, { color: theme.textSecondary }]}>Nome completo</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+                  placeholder="João Silva"
+                  placeholderTextColor={theme.textMuted}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                />
+              </>
+            )}
+
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Email</Text>
             <TextInput
               style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="João Silva"
+              placeholder="email@exemplo.com"
               placeholderTextColor={theme.textMuted}
-              value={name}
-              onChangeText={setName}
-              autoCapitalize="words"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
             />
 
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Matrícula</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Password</Text>
             <TextInput
               style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="AA-00-BB"
+              placeholder="••••••••"
               placeholderTextColor={theme.textMuted}
-              value={plate}
-              onChangeText={(t) => setPlate(t.toUpperCase())}
-              autoCapitalize="characters"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
             />
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -469,10 +506,534 @@ const LoginScreen = ({ onLogin, theme }) => {
                 {isRegister ? 'Já tem conta? Entrar' : 'Não tem conta? Registar'}
               </Text>
             </TouchableOpacity>
+            
+            {isRegister && (
+              <Text style={[{ color: theme.textMuted, fontSize: 12, textAlign: 'center', marginTop: 12 }]}>
+                Após criar conta, adicione os seus veículos nas Definições
+              </Text>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+};
+
+// Car Icon for Vehicles
+const CarIcon = ({ size = 24, color = '#666666' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z"
+    />
+  </Svg>
+);
+
+// Credit Card Icon
+const CreditCardIcon = ({ size = 24, color = '#666666' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M20,8H4V6H20M20,18H4V12H20M20,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V6C22,4.89 21.1,4 20,4Z"
+    />
+  </Svg>
+);
+
+// Plus Icon
+const PlusIcon = ({ size = 24, color = '#666666' }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill={color}
+      d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+    />
+  </Svg>
+);
+
+// Settings Tab Component with Vehicles and Cards Management
+const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLogout, onSetupChange }) => {
+  // Vehicles state
+  const [vehicles, setVehicles] = useState([]);
+  const [showVehicleForm, setShowVehicleForm] = useState(false);
+  const [vehicleForm, setVehicleForm] = useState({ plate: '', brand: '', model: '', color: '' });
+  const [vehicleLoading, setVehicleLoading] = useState(false);
+  
+  // Payment methods state
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [showCardForm, setShowCardForm] = useState(false);
+  const [cardForm, setCardForm] = useState({
+    card_type: 'visa',
+    card_number: '',
+    card_holder_name: '',
+    expiry_month: '',
+    expiry_year: '',
+  });
+  const [cardLoading, setCardLoading] = useState(false);
+  
+  // Loading state
+  const [loading, setLoading] = useState(true);
+  
+  // Load data on mount
+  useEffect(() => {
+    loadUserData();
+  }, []);
+  
+  const loadUserData = async () => {
+    setLoading(true);
+    try {
+      const [vehiclesRes, methodsRes] = await Promise.all([
+        api.get('/api/user/vehicles'),
+        api.get('/api/user/payment-methods'),
+      ]);
+      setVehicles(vehiclesRes.data.vehicles || []);
+      setPaymentMethods(methodsRes.data.payment_methods || []);
+    } catch (e) {
+      console.log('Error loading user data:', e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Add vehicle
+  const addVehicle = async () => {
+    if (!vehicleForm.plate.trim()) {
+      showToast('error', 'Erro', 'Indique a matrícula');
+      return;
+    }
+    
+    setVehicleLoading(true);
+    try {
+      await api.post('/api/user/vehicles', vehicleForm);
+      showToast('success', 'Veículo adicionado!', vehicleForm.plate.toUpperCase());
+      setVehicleForm({ plate: '', brand: '', model: '', color: '' });
+      setShowVehicleForm(false);
+      loadUserData();
+      if (onSetupChange) onSetupChange();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao adicionar veículo');
+    } finally {
+      setVehicleLoading(false);
+    }
+  };
+  
+  // Remove vehicle
+  const removeVehicle = async (id, plate) => {
+    try {
+      await api.delete(`/api/user/vehicles/${id}`);
+      showToast('success', 'Veículo removido', plate);
+      loadUserData();
+      if (onSetupChange) onSetupChange();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao remover veículo');
+    }
+  };
+  
+  // Set vehicle as primary
+  const setPrimaryVehicle = async (plate) => {
+    try {
+      await api.put(`/api/mobile/vehicles/${plate}/set-primary`);
+      showToast('success', 'Veículo principal', `${plate} é agora o veículo principal`);
+      loadUserData();
+      if (onSetupChange) onSetupChange();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao definir veículo principal');
+    }
+  };
+  
+  // Add payment card
+  const addCard = async () => {
+    if (!cardForm.card_number.trim() || !cardForm.card_holder_name.trim()) {
+      showToast('error', 'Erro', 'Preencha todos os campos obrigatórios');
+      return;
+    }
+    
+    setCardLoading(true);
+    try {
+      await api.post('/api/user/payment-methods', {
+        ...cardForm,
+        expiry_month: parseInt(cardForm.expiry_month) || 12,
+        expiry_year: parseInt(cardForm.expiry_year) || 2025,
+        is_default: true,
+      });
+      showToast('success', 'Cartão adicionado!', '');
+      setCardForm({
+        card_type: 'visa',
+        card_number: '',
+        card_holder_name: '',
+        expiry_month: '',
+        expiry_year: '',
+      });
+      setShowCardForm(false);
+      loadUserData();
+      if (onSetupChange) onSetupChange();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao adicionar cartão');
+    } finally {
+      setCardLoading(false);
+    }
+  };
+  
+  // Remove payment card
+  const removeCard = async (id) => {
+    try {
+      await api.delete(`/api/user/payment-methods/${id}`);
+      showToast('success', 'Cartão removido', '');
+      loadUserData();
+      if (onSetupChange) onSetupChange();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao remover cartão');
+    }
+  };
+
+  return (
+    <>
+      {/* User Info */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Conta</Text>
+        <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Nome</Text>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.name}</Text>
+        </View>
+        <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Email</Text>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.email}</Text>
+        </View>
+        <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Tarifa</Text>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>€{parkingRate.toFixed(2)}/hora</Text>
+        </View>
+      </View>
+      
+      {/* Vehicles Section */}
+      <View style={styles.section}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Meus Veículos</Text>
+          <TouchableOpacity
+            style={[styles.smallAddButton, { backgroundColor: theme.primary }]}
+            onPress={() => {
+              triggerHaptic('light');
+              setShowVehicleForm(!showVehicleForm);
+            }}
+          >
+            <PlusIcon size={18} color={theme.secondary} />
+            <Text style={[{ color: theme.secondary, fontSize: 12, fontWeight: '600', marginLeft: 4 }]}>
+              Adicionar
+            </Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Add Vehicle Form */}
+        {showVehicleForm && (
+          <View style={[styles.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <TextInput
+              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              placeholder="Matrícula *"
+              placeholderTextColor={theme.textMuted}
+              value={vehicleForm.plate}
+              onChangeText={(t) => setVehicleForm({ ...vehicleForm, plate: t.toUpperCase() })}
+              autoCapitalize="characters"
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+                placeholder="Marca"
+                placeholderTextColor={theme.textMuted}
+                value={vehicleForm.brand}
+                onChangeText={(t) => setVehicleForm({ ...vehicleForm, brand: t })}
+              />
+              <TextInput
+                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+                placeholder="Modelo"
+                placeholderTextColor={theme.textMuted}
+                value={vehicleForm.model}
+                onChangeText={(t) => setVehicleForm({ ...vehicleForm, model: t })}
+              />
+            </View>
+            <TextInput
+              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              placeholder="Cor"
+              placeholderTextColor={theme.textMuted}
+              value={vehicleForm.color}
+              onChangeText={(t) => setVehicleForm({ ...vehicleForm, color: t })}
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <TouchableOpacity
+                style={[styles.formButton, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => setShowVehicleForm(false)}
+              >
+                <Text style={{ color: theme.text }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.formButton, { flex: 1, backgroundColor: theme.primary }]}
+                onPress={() => {
+                  triggerHaptic('medium');
+                  addVehicle();
+                }}
+                disabled={vehicleLoading}
+              >
+                {vehicleLoading ? (
+                  <ActivityIndicator size="small" color={theme.secondary} />
+                ) : (
+                  <Text style={{ color: theme.secondary, fontWeight: '600' }}>Adicionar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        
+        {/* Vehicles List */}
+        {loading ? (
+          <SkeletonCard />
+        ) : vehicles.length === 0 ? (
+          <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border, alignItems: 'center', paddingVertical: 24 }]}>
+            <CarIcon size={40} color={theme.textMuted} />
+            <Text style={[{ color: theme.textSecondary, marginTop: 8, textAlign: 'center' }]}>
+              Nenhum veículo registado
+            </Text>
+          </View>
+        ) : (
+          vehicles.map((v) => (
+            <View key={v.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: v.is_primary ? theme.primary : theme.border, borderWidth: v.is_primary ? 2 : 1 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <View style={{ 
+                  width: 40, 
+                  height: 40, 
+                  borderRadius: 20, 
+                  backgroundColor: v.is_primary ? theme.primary + '20' : theme.background,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <CarIcon size={22} color={v.is_primary ? theme.primary : theme.textSecondary} />
+                </View>
+                <View style={{ marginLeft: 12, flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.vehiclePlate, { color: theme.text }]}>{v.plate}</Text>
+                    {v.is_primary && (
+                      <View style={{
+                        backgroundColor: theme.primary,
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                        marginLeft: 8,
+                      }}>
+                        <Text style={{ fontSize: 9, fontWeight: '600', color: theme.secondary }}>PRINCIPAL</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[{ color: theme.textSecondary, fontSize: 12 }]}>
+                    {[v.brand, v.model, v.color].filter(Boolean).join(' • ') || 'Sem detalhes'}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {!v.is_primary && (
+                  <TouchableOpacity
+                    style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setPrimaryVehicle(v.plate);
+                    }}
+                  >
+                    <Text style={{ color: theme.secondary, fontSize: 11, fontWeight: '600' }}>Principal</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.deleteButton, { backgroundColor: theme.danger }]}
+                  onPress={() => {
+                    triggerHaptic('medium');
+                    removeVehicle(v.id, v.plate);
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>Remover</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+      
+      {/* Payment Methods Section */}
+      <View style={styles.section}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Método de Pagamento</Text>
+          {paymentMethods.length === 0 && (
+            <TouchableOpacity
+              style={[styles.smallAddButton, { backgroundColor: theme.primary }]}
+              onPress={() => {
+                triggerHaptic('light');
+                setShowCardForm(!showCardForm);
+              }}
+            >
+              <PlusIcon size={18} color={theme.secondary} />
+              <Text style={[{ color: theme.secondary, fontSize: 12, fontWeight: '600', marginLeft: 4 }]}>
+                Adicionar
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        {/* Add Card Form */}
+        {showCardForm && (
+          <View style={[styles.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, paddingVertical: 0 }]}>
+              <Text style={{ color: theme.textMuted, fontSize: 12, marginBottom: 4, marginTop: 8 }}>Tipo de Cartão</Text>
+              <View style={{ flexDirection: 'row', paddingBottom: 8 }}>
+                {['visa', 'mastercard', 'amex'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.cardTypeButton,
+                      { borderColor: theme.border },
+                      cardForm.card_type === type && { borderColor: theme.primary, backgroundColor: theme.primary + '20' }
+                    ]}
+                    onPress={() => setCardForm({ ...cardForm, card_type: type })}
+                  >
+                    <Text style={[{ color: theme.text, fontSize: 12 }, cardForm.card_type === type && { fontWeight: '600' }]}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <TextInput
+              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              placeholder="Número do Cartão *"
+              placeholderTextColor={theme.textMuted}
+              value={cardForm.card_number}
+              onChangeText={(t) => setCardForm({ ...cardForm, card_number: t })}
+              keyboardType="number-pad"
+            />
+            <TextInput
+              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              placeholder="Nome no Cartão *"
+              placeholderTextColor={theme.textMuted}
+              value={cardForm.card_holder_name}
+              onChangeText={(t) => setCardForm({ ...cardForm, card_holder_name: t.toUpperCase() })}
+              autoCapitalize="characters"
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+                placeholder="Mês (MM)"
+                placeholderTextColor={theme.textMuted}
+                value={cardForm.expiry_month}
+                onChangeText={(t) => setCardForm({ ...cardForm, expiry_month: t })}
+                keyboardType="number-pad"
+                maxLength={2}
+              />
+              <TextInput
+                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+                placeholder="Ano (AAAA)"
+                placeholderTextColor={theme.textMuted}
+                value={cardForm.expiry_year}
+                onChangeText={(t) => setCardForm({ ...cardForm, expiry_year: t })}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <TouchableOpacity
+                style={[styles.formButton, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => setShowCardForm(false)}
+              >
+                <Text style={{ color: theme.text }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.formButton, { flex: 1, backgroundColor: theme.primary }]}
+                onPress={() => {
+                  triggerHaptic('medium');
+                  addCard();
+                }}
+                disabled={cardLoading}
+              >
+                {cardLoading ? (
+                  <ActivityIndicator size="small" color={theme.secondary} />
+                ) : (
+                  <Text style={{ color: theme.secondary, fontWeight: '600' }}>Adicionar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        
+        {/* Cards List */}
+        {loading ? (
+          <SkeletonCard />
+        ) : paymentMethods.length === 0 ? (
+          <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border, alignItems: 'center', paddingVertical: 24 }]}>
+            <CreditCardIcon size={40} color={theme.textMuted} />
+            <Text style={[{ color: theme.textSecondary, marginTop: 8, textAlign: 'center' }]}>
+              Nenhum cartão registado
+            </Text>
+            <Text style={[{ color: theme.textMuted, fontSize: 12, marginTop: 4, textAlign: 'center' }]}>
+              Adicione um cartão para pagamento automático na saída
+            </Text>
+          </View>
+        ) : (
+          paymentMethods.slice(0, 1).map((pm) => (
+            <View key={pm.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <CreditCardIcon size={24} color={theme.primary} />
+                <View style={{ marginLeft: 12, flex: 1 }}>
+                  <Text style={[styles.vehiclePlate, { color: theme.text }]}>
+                    {pm.card_type?.toUpperCase()} •••• {pm.card_last_four}
+                  </Text>
+                  <Text style={[{ color: theme.textSecondary, fontSize: 12 }]}>
+                    {pm.card_holder_name} • Exp: {pm.expiry_month}/{pm.expiry_year}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.deleteButton, { backgroundColor: theme.danger }]}
+                onPress={() => {
+                  triggerHaptic('medium');
+                  removeCard(pm.id);
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Remover</Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        )}
+      </View>
+      
+      {/* Settings */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Definições</Text>
+        
+        {/* Dark Mode Toggle */}
+        <View style={[styles.settingsCard, styles.settingsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.settingsRowLeft}>
+            <MoonIcon size={24} color={theme.textSecondary} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.settingsValue, { color: theme.text }]}>Modo Escuro</Text>
+              <Text style={[styles.settingsLabel, { color: theme.textSecondary, marginTop: 2 }]}>
+                {isDarkMode ? 'Ativado' : 'Desativado'}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={isDarkMode}
+            onValueChange={(value) => {
+              triggerHaptic('light');
+              setIsDarkMode(value);
+            }}
+            trackColor={{ false: theme.border, true: theme.primary }}
+            thumbColor={isDarkMode ? theme.secondary : '#f4f3f4'}
+          />
+        </View>
+        
+        {/* Logout Button */}
+        <TouchableOpacity
+          style={[styles.logoutButton, { backgroundColor: theme.danger }]}
+          onPress={() => {
+            triggerHaptic('medium');
+            onLogout();
+          }}
+        >
+          <Text style={[styles.logoutButtonText, { color: theme.textInverse }]}>Terminar Sessão</Text>
+        </TouchableOpacity>
+      </View>
+    </>
   );
 };
 
@@ -486,15 +1047,39 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
   
+  // User setup state (vehicles and cards)
+  const [userVehicles, setUserVehicles] = useState([]);
+  const [userCards, setUserCards] = useState([]);
+  
   // Reservation modal state
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedSpot, setSelectedSpot] = useState(null);
-  const [selectedDuration, setSelectedDuration] = useState(1);
+  const [reserveForToday, setReserveForToday] = useState(true); // true = today, false = tomorrow
+  const [selectedVehicleForReservation, setSelectedVehicleForReservation] = useState(null);
   
   // Confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmSpot, setConfirmSpot] = useState(null);
+  const [spotReservationStatus, setSpotReservationStatus] = useState({}); // { today_reserved: bool, tomorrow_reserved: bool }
+  
+  // Animation for reservation modal slide up
+  const reserveModalSlideAnim = useRef(new Animated.Value(300)).current;
+  
+  // Trigger slide animation when modal visibility changes
+  useEffect(() => {
+    if (showReserveModal) {
+      // Slide up
+      Animated.timing(reserveModalSlideAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      // Reset to bottom for next open
+      reserveModalSlideAnim.setValue(300);
+    }
+  }, [showReserveModal]);
   
   // Timer state for active sessions
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -527,22 +1112,23 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     return (elapsed * parkingRate).toFixed(2);
   };
   
-  // Get alerts for expiring reservations and payment deadlines
+  // Get alerts for reservations and payment deadlines
   const getAlerts = () => {
     const alerts = [];
     
-    // Check reservations expiring soon (< 1 hour)
-    reservations.forEach(res => {
-      const expiresIn = (res.expires_at * 1000 - currentTime) / 1000 / 60; // minutes
-      if (expiresIn > 0 && expiresIn < 60) {
-        alerts.push({
-          type: 'warning',
-          icon: 'clock',
-          title: 'Reserva a expirar',
-          message: `Vaga ${res.spot} expira em ${Math.floor(expiresIn)} min`,
-        });
-      }
+    // Show reminder for today's reservations
+    const todayReservations = reservations.filter(res => {
+      const today = new Date().toISOString().split('T')[0];
+      return res.reservation_date === today || !res.reservation_date;
     });
+    if (todayReservations.length > 0) {
+      alerts.push({
+        type: 'warning',
+        icon: 'clock',
+        title: 'Reservas para hoje',
+        message: `${todayReservations.length} reserva(s) ativa(s). Multa de 20€ se não usar!`,
+      });
+    }
     
     // Check payment deadlines
     sessions.forEach(session => {
@@ -576,49 +1162,150 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   
   const alerts = getAlerts();
   
-  const durationOptions = [1, 2, 3, 4, 6, 12, 24];
+  // Check if user has completed onboarding (has vehicles and cards)
+  const hasCompletedSetup = userVehicles.length > 0 && userCards.length > 0;
+  const needsVehicle = userVehicles.length === 0;
+  const needsCard = userVehicles.length > 0 && userCards.length === 0;
+  
+  // Day-based reservation - no duration options needed
 
   const loadData = async () => {
     try {
-      const [spotsRes, sessionsRes, reservationsRes, configRes] = await Promise.all([
+      const [spotsRes, sessionsRes, reservationsRes, configRes, vehiclesRes, cardsRes] = await Promise.all([
         api.get('/parking'),
         api.get('/api/mobile/sessions'),
         api.get('/api/mobile/reservations'),
         api.get('/api/config'),
+        api.get('/api/user/vehicles'),
+        api.get('/api/user/payment-methods'),
       ]);
+      console.log('[DEBUG] vehiclesRes:', JSON.stringify(vehiclesRes.data));
+      console.log('[DEBUG] cardsRes:', JSON.stringify(cardsRes.data));
       setSpots(spotsRes.data);
       setSessions(sessionsRes.data.sessions || []);
       setReservations(reservationsRes.data.reservations || []);
+      const vehicles = vehiclesRes.data.vehicles || [];
+      const cards = cardsRes.data.payment_methods || [];
+      console.log('[DEBUG] Setting userVehicles:', vehicles.length, 'userCards:', cards.length);
+      setUserVehicles(vehicles);
+      setUserCards(cards);
       if (configRes.data?.parking_rate_per_hour) {
         setParkingRate(configRes.data.parking_rate_per_hour);
       }
     } catch (e) {
-      console.log('Load error:', e.message);
+      console.log('Load error:', e.message, e.response?.data);
     } finally {
       setLoading(false);
     }
   };
 
+  // WebSocket connection for real-time spot updates
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  
+  const connectWebSocket = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    
+    try {
+      console.log('[WS] Connecting to', WS_URL);
+      wsRef.current = new WebSocket(WS_URL);
+      
+      wsRef.current.onopen = () => {
+        console.log('[WS] Connected');
+        showToast('success', 'Conectado', 'Atualizações em tempo real ativas');
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // Update spots with real-time data
+          setSpots(data);
+        } catch (e) {
+          console.log('[WS] Parse error:', e.message);
+        }
+      };
+      
+      wsRef.current.onclose = () => {
+        console.log('[WS] Disconnected, reconnecting in 5s...');
+        // Reconnect after 5 seconds
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.log('[WS] Error:', error.message);
+      };
+    } catch (e) {
+      console.log('[WS] Connection failed:', e.message);
+    }
+  };
+
   useEffect(() => {
+    // Initial data load
     loadData();
-    const interval = setInterval(loadData, 15000);
-    return () => clearInterval(interval);
+    
+    // Connect WebSocket for real-time spot updates
+    connectWebSocket();
+    
+    // Fallback: refresh sessions/reservations every 60 seconds (spots come via WS)
+    const interval = setInterval(async () => {
+      try {
+        const [sessionsRes, reservationsRes] = await Promise.all([
+          api.get('/api/mobile/sessions'),
+          api.get('/api/mobile/reservations'),
+        ]);
+        setSessions(sessionsRes.data.sessions || []);
+        setReservations(reservationsRes.data.reservations || []);
+      } catch (e) {
+        console.log('Refresh error:', e.message);
+      }
+    }, 60000);
+    
+    return () => {
+      clearInterval(interval);
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
   }, []);
 
-  const openReserveModal = (spotName) => {
+  const openReserveModal = async (spotName) => {
     setSelectedSpot(spotName);
-    setSelectedDuration(1);
+    setReserveForToday(true);
+    
+    // Auto-select primary vehicle or first vehicle if only one
+    const primaryVehicle = userVehicles.find(v => v.is_primary);
+    setSelectedVehicleForReservation(primaryVehicle?.plate || userVehicles[0]?.plate || null);
+    
+    // Check if this spot already has reservations for today/tomorrow (from any user)
+    try {
+      const res = await api.get('/api/reservations/check', { 
+        params: { spot: spotName } 
+      });
+      setSpotReservationStatus(res.data || {});
+    } catch (e) {
+      console.log('Could not check spot reservation status:', e.message);
+      setSpotReservationStatus({});
+    }
+    
     setShowReserveModal(true);
   };
 
   const handleReserve = async () => {
     if (!selectedSpot) return;
+    if (!selectedVehicleForReservation) {
+      showToast('error', 'Selecione um veículo', 'Escolha qual carro vai usar nesta reserva.');
+      return;
+    }
     try {
       await api.post('/api/mobile/reservations', { 
         spot: selectedSpot, 
-        duration_hours: selectedDuration 
+        reservation_date: reserveForToday ? 'today' : 'tomorrow',
+        plate: selectedVehicleForReservation
       });
-      showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada por ${selectedDuration}h`);
+      showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada para ${reserveForToday ? 'hoje' : 'amanhã'}. Multa de 20€ se não usar.`);
       setShowReserveModal(false);
       setSelectedSpot(null);
       loadData();
@@ -708,7 +1395,6 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
       <View style={[styles.homeHeader, { backgroundColor: theme.surface }]}>
         <View>
           <Text style={[styles.greeting, { color: theme.text }]}>Olá, {user?.name?.split(' ')[0]}!</Text>
-          <Text style={[styles.plate, { color: theme.primary }]}>{user?.plate}</Text>
         </View>
       </View>
 
@@ -747,30 +1433,93 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
       >
         {activeTab === 'home' && (
           <>
-            {/* Alerts */}
-            {alerts.length > 0 && (
-              <View style={styles.alertsSection}>
-                {alerts.map((alert, i) => (
-                  <View key={i} style={[
-                    styles.alertCard,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
-                    alert.type === 'warning' && styles.alertWarning,
-                    alert.type === 'danger' && styles.alertDanger,
-                    alert.type === 'info' && styles.alertInfo,
-                  ]}>
-                    <View style={styles.alertIconContainer}>
-                      {alert.icon === 'clock' && <ClockIcon size={24} color="#fff" />}
-                      {alert.icon === 'danger' && <DangerIcon size={24} color="#fff" />}
-                      {alert.icon === 'payment' && <PaymentIcon size={24} color="#fff" />}
-                    </View>
-                    <View style={styles.alertContent}>
-                      <Text style={[styles.alertTitle, { color: theme.text }]}>{alert.title}</Text>
-                      <Text style={[styles.alertMessage, { color: theme.textSecondary }]}>{alert.message}</Text>
-                    </View>
-                  </View>
-                ))}
+            {/* Onboarding - Show setup prompts if user hasn't completed setup */}
+            {!hasCompletedSetup && (
+              <View style={styles.section}>
+                <View style={[styles.onboardingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  {needsVehicle ? (
+                    <>
+                      <CarIcon size={64} color={theme.textMuted} />
+                      <Text style={[styles.onboardingTitle, { color: theme.text }]}>
+                        Adicione o seu veículo
+                      </Text>
+                      <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary }]}>
+                        Para utilizar o estacionamento, precisa de registar pelo menos um veículo.
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.onboardingButton, { backgroundColor: theme.primary }]}
+                        onPress={() => {
+                          triggerHaptic('medium');
+                          setActiveTab('settings');
+                        }}
+                      >
+                        <PlusIcon size={20} color={theme.secondary} />
+                        <Text style={[styles.onboardingButtonText, { color: theme.secondary }]}>
+                          Adicionar Veículo
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : needsCard ? (
+                    <>
+                      <CreditCardIcon size={64} color={theme.textMuted} />
+                      <Text style={[styles.onboardingTitle, { color: theme.text }]}>
+                        Adicione um método de pagamento
+                      </Text>
+                      <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary }]}>
+                        Para pagar o estacionamento automaticamente, precisa de registar um cartão.
+                      </Text>
+                      <View style={[styles.onboardingVehiclePreview, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                        <CarIcon size={20} color={theme.primary} />
+                        <Text style={{ color: theme.text, marginLeft: 8, fontWeight: '600' }}>
+                          {userVehicles[0]?.plate}
+                        </Text>
+                        <Text style={{ color: theme.success, marginLeft: 'auto', fontSize: 12 }}>Registado</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.onboardingButton, { backgroundColor: theme.primary }]}
+                        onPress={() => {
+                          triggerHaptic('medium');
+                          setActiveTab('settings');
+                        }}
+                      >
+                        <PlusIcon size={20} color={theme.secondary} />
+                        <Text style={[styles.onboardingButtonText, { color: theme.secondary }]}>
+                          Adicionar Cartão
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : null}
+                </View>
               </View>
             )}
+            
+            {/* Only show parking info if setup is complete */}
+            {hasCompletedSetup && (
+              <>
+                {/* Alerts */}
+                {alerts.length > 0 && (
+                  <View style={styles.alertsSection}>
+                    {alerts.map((alert, i) => (
+                      <View key={i} style={[
+                        styles.alertCard,
+                        { backgroundColor: theme.surface, borderColor: theme.border },
+                        alert.type === 'warning' && styles.alertWarning,
+                        alert.type === 'danger' && styles.alertDanger,
+                        alert.type === 'info' && styles.alertInfo,
+                      ]}>
+                        <View style={styles.alertIconContainer}>
+                          {alert.icon === 'clock' && <ClockIcon size={24} color="#fff" />}
+                          {alert.icon === 'danger' && <DangerIcon size={24} color="#fff" />}
+                          {alert.icon === 'payment' && <PaymentIcon size={24} color="#fff" />}
+                        </View>
+                        <View style={styles.alertContent}>
+                          <Text style={[styles.alertTitle, { color: theme.text }]}>{alert.title}</Text>
+                          <Text style={[styles.alertMessage, { color: theme.textSecondary }]}>{alert.message}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
             
             {/* Active Session Timer */}
             {sessions.filter(s => s.status === 'open').length > 0 && (
@@ -851,7 +1600,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                     <View>
                       <Text style={[styles.cardTitle, { color: theme.text }]}>Vaga {res.spot}</Text>
                       <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                        Expira: {new Date(res.expires_at * 1000).toLocaleString('pt-PT')}
+                        Para: {res.reservation_date || 'Hoje'}
+                      </Text>
+                      <Text style={[{ color: theme.warning, fontSize: 11, marginTop: 2 }]}>
+                        Multa de 20€ se não usar
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -902,6 +1654,8 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 ))
               )}
             </View>
+              </>
+            )}
           </>
         )}
 
@@ -945,97 +1699,210 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         )}
 
         {activeTab === 'settings' && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Definições</Text>
-            
-            {/* User Info */}
-            <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Nome</Text>
-              <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.name}</Text>
-            </View>
-            
-            <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Matrícula</Text>
-              <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.plate}</Text>
-            </View>
-            
-            <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Tarifa</Text>
-              <Text style={[styles.settingsValue, { color: theme.text }]}>€{parkingRate.toFixed(2)}/hora</Text>
-            </View>
-            
-            {/* Dark Mode Toggle */}
-            <View style={[styles.settingsCard, styles.settingsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <View style={styles.settingsRowLeft}>
-                <MoonIcon size={24} color={theme.textSecondary} />
-                <View style={{ marginLeft: 12 }}>
-                  <Text style={[styles.settingsValue, { color: theme.text }]}>Modo Escuro</Text>
-                  <Text style={[styles.settingsLabel, { color: theme.textSecondary, marginTop: 2 }]}>
-                    {isDarkMode ? 'Ativado' : 'Desativado'}
-                  </Text>
-                </View>
-              </View>
-              <Switch
-                value={isDarkMode}
-                onValueChange={(value) => {
-                  triggerHaptic('light');
-                  setIsDarkMode(value);
-                }}
-                trackColor={{ false: theme.border, true: theme.primary }}
-                thumbColor={isDarkMode ? theme.secondary : '#f4f3f4'}
-              />
-            </View>
-            
-            {/* Logout Button */}
-            <TouchableOpacity
-              style={[styles.logoutButton, { backgroundColor: theme.danger }]}
-              onPress={() => {
-                triggerHaptic('medium');
-                onLogout();
-              }}
-            >
-              <Text style={[styles.logoutButtonText, { color: theme.textInverse }]}>Terminar Sessão</Text>
-            </TouchableOpacity>
-          </View>
+          <SettingsTab 
+            user={user}
+            theme={theme}
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setIsDarkMode}
+            parkingRate={parkingRate}
+            onLogout={onLogout}
+            onSetupChange={loadData}
+          />
         )}
       </ScrollView>
 
-      {/* Duration Picker Modal */}
+      {/* Day Picker Modal - Today or Tomorrow */}
       <Modal
         visible={showReserveModal}
         transparent={true}
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setShowReserveModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+          <Animated.View 
+            style={[
+              styles.modalContent, 
+              { 
+                backgroundColor: theme.surface,
+                transform: [{ translateY: reserveModalSlideAnim }],
+              }
+            ]}
+          >
             <Text style={[styles.modalTitle, { color: theme.text }]}>Reservar {selectedSpot}</Text>
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Selecione a duração</Text>
+            
+            {/* Vehicle Selector - scrollable list for scalability */}
+            {userVehicles.length > 0 && (
+              <>
+                <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: 8 }]}>
+                  {userVehicles.length > 1 ? 'Selecione o veículo' : 'Veículo'}
+                </Text>
+                <View style={{ 
+                  maxHeight: userVehicles.length > 3 ? 150 : undefined, 
+                  marginBottom: 12,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                }}>
+                  <ScrollView 
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={userVehicles.length > 3}
+                  >
+                    {userVehicles.map((vehicle, index) => {
+                      const isSelected = selectedVehicleForReservation === vehicle.plate;
+                      return (
+                        <TouchableOpacity
+                          key={vehicle.plate}
+                          style={[
+                            {
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: 12,
+                              backgroundColor: isSelected ? theme.primary : theme.background,
+                              borderWidth: 1,
+                              borderColor: isSelected ? theme.primary : theme.border,
+                              borderRadius: 10,
+                              marginBottom: index < userVehicles.length - 1 ? 8 : 0,
+                            }
+                          ]}
+                          onPress={() => {
+                            triggerHaptic('light');
+                            setSelectedVehicleForReservation(vehicle.plate);
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            {/* Car icon */}
+                            <View style={{ 
+                              width: 36, 
+                              height: 36, 
+                              borderRadius: 18, 
+                              backgroundColor: isSelected ? theme.secondary + '20' : theme.surface,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              marginRight: 12,
+                            }}>
+                              <CarIcon size={22} color={isSelected ? theme.secondary : theme.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={[
+                                  { 
+                                    fontSize: 15, 
+                                    fontWeight: '600',
+                                    color: isSelected ? theme.secondary : theme.text,
+                                  }
+                                ]}>
+                                  {vehicle.plate}
+                                </Text>
+                                {vehicle.is_primary && (
+                                  <View style={{
+                                    backgroundColor: isSelected ? theme.secondary : theme.primary,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 2,
+                                    borderRadius: 4,
+                                    marginLeft: 8,
+                                  }}>
+                                    <Text style={{ 
+                                      fontSize: 9, 
+                                      fontWeight: '600',
+                                      color: isSelected ? theme.primary : theme.secondary,
+                                    }}>
+                                      PRINCIPAL
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                              {vehicle.created_at && (
+                                <Text style={{ 
+                                  fontSize: 11, 
+                                  color: isSelected ? theme.secondary + '80' : theme.textSecondary,
+                                  marginTop: 2,
+                                }}>
+                                  Adicionado em {new Date(vehicle.created_at).toLocaleDateString('pt-PT')}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                          {/* Checkmark for selected */}
+                          {isSelected && (
+                            <View style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: 12,
+                              backgroundColor: theme.secondary,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}>
+                              <Text style={{ color: theme.primary, fontWeight: 'bold', fontSize: 14 }}>✓</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </>
+            )}
+            
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginTop: 4 }]}>Selecione o dia</Text>
             
             <View style={styles.durationGrid}>
-              {durationOptions.map((hours) => (
-                <TouchableOpacity
-                  key={hours}
-                  style={[
-                    styles.durationButton,
-                    { borderColor: theme.border, backgroundColor: theme.background },
-                    selectedDuration === hours && { borderColor: theme.primary, backgroundColor: theme.primary }
-                  ]}
-                  onPress={() => {
-                    triggerHaptic('light');
-                    setSelectedDuration(hours);
-                  }}
-                >
-                  <Text style={[
-                    styles.durationButtonText,
-                    { color: theme.text },
-                    selectedDuration === hours && { color: theme.secondary }
-                  ]}>
-                    {hours}h
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginRight: 8 },
+                  reserveForToday && !spotReservationStatus.today_reserved && { borderColor: theme.primary, backgroundColor: theme.primary },
+                  spotReservationStatus.today_reserved && { opacity: 0.4, backgroundColor: theme.error + '20' }
+                ]}
+                onPress={() => {
+                  if (spotReservationStatus.today_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para hoje.');
+                    return;
+                  }
+                  triggerHaptic('light');
+                  setReserveForToday(true);
+                }}
+                disabled={spotReservationStatus.today_reserved}
+              >
+                <Text style={[
+                  styles.durationButtonText,
+                  { color: theme.text },
+                  reserveForToday && !spotReservationStatus.today_reserved && { color: theme.secondary },
+                  spotReservationStatus.today_reserved && { color: theme.error, textDecorationLine: 'line-through' }
+                ]}>
+                  Hoje
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.durationButton,
+                  { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginLeft: 8 },
+                  !reserveForToday && !spotReservationStatus.tomorrow_reserved && { borderColor: theme.primary, backgroundColor: theme.primary },
+                  spotReservationStatus.tomorrow_reserved && { opacity: 0.4, backgroundColor: theme.error + '20' }
+                ]}
+                onPress={() => {
+                  if (spotReservationStatus.tomorrow_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para amanhã.');
+                    return;
+                  }
+                  triggerHaptic('light');
+                  setReserveForToday(false);
+                }}
+                disabled={spotReservationStatus.tomorrow_reserved}
+              >
+                <Text style={[
+                  styles.durationButtonText,
+                  { color: theme.text },
+                  !reserveForToday && !spotReservationStatus.tomorrow_reserved && { color: theme.secondary },
+                  spotReservationStatus.tomorrow_reserved && { color: theme.error, textDecorationLine: 'line-through' }
+                ]}>
+                  Amanhã
+                </Text>
+              </TouchableOpacity>
             </View>
+            
+            <Text style={[styles.modalSubtitle, { color: theme.warning, marginTop: 12, fontSize: 13 }]}>
+              ⚠️ Multa de 20€ se não usar a reserva
+            </Text>
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1048,8 +1915,21 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 <Text style={[styles.modalCancelText, { color: theme.text }]}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalConfirmBtn, { backgroundColor: theme.primary }]}
+                style={[
+                  styles.modalConfirmBtn, 
+                  { backgroundColor: theme.primary },
+                  (reserveForToday && spotReservationStatus.today_reserved) || (!reserveForToday && spotReservationStatus.tomorrow_reserved) 
+                    ? { opacity: 0.5 } : {}
+                ]}
                 onPress={() => {
+                  if (reserveForToday && spotReservationStatus.today_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para hoje.');
+                    return;
+                  }
+                  if (!reserveForToday && spotReservationStatus.tomorrow_reserved) {
+                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para amanhã.');
+                    return;
+                  }
                   triggerHaptic('medium');
                   handleReserve();
                 }}
@@ -1057,7 +1937,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 <Text style={[styles.buttonText, { color: theme.secondary }]}>Reservar</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
       
@@ -1783,5 +2663,114 @@ const styles = StyleSheet.create({
   confirmModalBtnText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Vehicle and Card Form styles
+  vehicleCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: lightColors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: lightColors.border,
+  },
+  vehiclePlate: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  formCard: {
+    backgroundColor: lightColors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: lightColors.border,
+  },
+  formInput: {
+    backgroundColor: lightColors.background,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: lightColors.border,
+  },
+  formButton: {
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  deleteButton: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  cardTypeButton: {
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    borderWidth: 1,
+  },
+  // Onboarding styles
+  onboardingCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 20,
+  },
+  onboardingTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  onboardingSubtitle: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+  },
+  onboardingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 24,
+    minWidth: 200,
+  },
+  onboardingButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  onboardingVehiclePreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 16,
+    width: '100%',
+  },
+  smallButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
 });

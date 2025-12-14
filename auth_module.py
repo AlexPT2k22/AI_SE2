@@ -18,8 +18,9 @@ from pydantic import BaseModel, Field, EmailStr
 from fastapi import HTTPException, Header
 import asyncpg
 
-# JWT Configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me-in-production")
+# JWT Configuration - MUST match main.py
+SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", SESSION_SECRET)
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24 * 7  # 7 dias
 

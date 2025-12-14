@@ -382,34 +382,30 @@ Endpoints para forçar manualmente o estado de uma vaga (útil para testes sem c
 
 ```bash
 # Forçar vaga como LIVRE
-curl -X POST http://localhost:8000/api/debug/spot \
-  -H "Content-Type: application/json" \
-  -d "{\"spot\": \"spot01\", \"occupied\": false}"
+curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"vaga01\", \"occupied\": false}"
 
 # Forçar vaga como OCUPADA
-curl -X POST http://localhost:8000/api/debug/spot \
-  -H "Content-Type: application/json" \
-  -d "{\"spot\": \"spot01\", \"occupied\": true}"
+curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"vaga01\", \"occupied\": true}"
 
 # Resetar vaga para deteção automática (volta a usar o modelo AI)
-curl -X DELETE http://localhost:8000/api/debug/spot/spot01
+curl -X DELETE http://localhost:8000/api/debug/spot/vaga01
 ```
 
 **Respostas:**
 ```json
 // POST - Sucesso
-{"message": "Spot spot01 definido como livre", "spot": "spot01", "occupied": false}
+{"message": "Spot vaga01 definido como livre", "spot": "vaga01", "occupied": false}
 
 // DELETE - Sucesso
-{"message": "Spot spot01 resetado para deteção automática"}
+{"message": "Spot vaga01 resetado para deteção automática"}
 ```
 
 ### Opções Avançadas do Marcador de Vagas
 
 ```bash
 # Personalizar prefixo e índice inicial dos nomes das vagas
-python mark_parking_spots.py --source frame.jpg --output parking_spots.json --label-prefix "A" --start-index 1
-# Resultado: A1, A2, A3...
+python mark_parking_spots.py --source frame.jpg --output parking_spots.json --label-prefix "vaga" --start-index 1
+# Resultado: vaga01, vaga02, vaga03...
 
 # Exportar vídeo anotado (sem janela de preview)
 python visualize_spots_on_video.py --video video.mp4 --spots parking_spots.json --output runs/video_annotated.mp4 --no-preview
