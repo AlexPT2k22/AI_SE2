@@ -19,7 +19,6 @@ export default function Home() {
     const [spots, setSpots] = React.useState({});
     const [activeZone, setActiveZone] = React.useState('all');
     const [loading, setLoading] = React.useState(true);
-    const [selectedSpot, setSelectedSpot] = React.useState(null);
 
     React.useEffect(() => {
         loadSpots();
@@ -53,15 +52,7 @@ export default function Home() {
     };
 
     const filteredSpots = getFilteredSpots();
-    const freeCount = filteredSpots.filter(name => !spots[name]?.occupied).length;
-
-    const handleSpotClick = (spotName) => {
-        setSelectedSpot(spotName);
-    };
-
-    const closeModal = () => {
-        setSelectedSpot(null);
-    };
+    const freeCount = filteredSpots.filter(name => !spots[name]?.occupied && !spots[name]?.reserved).length;
 
     return (
         <div className="home-page">
@@ -103,7 +94,6 @@ export default function Home() {
                                     spotId={name}
                                     status={status}
                                     reserved={spot.reserved}
-                                    onClick={() => handleSpotClick(name)}
                                 />
                             );
                         })}
@@ -122,46 +112,6 @@ export default function Home() {
                     </Button>
                 </Link>
             </div>
-
-            {/* Spot Detail Modal */}
-            {selectedSpot && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <button className="modal-close" onClick={closeModal}>
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                            </svg>
-                        </button>
-                        <h3 className="modal-title">Confirm Reservation</h3>
-                        <p className="modal-subtitle">TugaPark</p>
-
-                        <div className="modal-details">
-                            <div className="detail-box">
-                                <span className="detail-label">Zone</span>
-                                <span className="detail-value">Zone A</span>
-                            </div>
-                            <div className="detail-box">
-                                <span className="detail-label">Spot</span>
-                                <span className="detail-value">{selectedSpot}</span>
-                            </div>
-                        </div>
-
-                        <div className="modal-price">
-                            <span className="price-value">€2.50</span>
-                            <span className="price-label">per hour</span>
-                        </div>
-
-                        <Link to="/reservar" onClick={closeModal}>
-                            <Button variant="primary" size="lg" className="confirm-btn">
-                                Confirm
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                                </svg>
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

@@ -9,7 +9,7 @@ const CarIcon = ({ color = '#c8e620' }) => (
     </svg>
 );
 
-const SpotCard = ({ spotId, status, reserved = false, onClick = () => {} }) => {
+const SpotCard = ({ spotId, status, reserved = false, reservedPlate = null, onClick = () => { } }) => {
     const isAvailable = status === 'available';
     const isOccupied = status === 'occupied';
 
@@ -21,7 +21,7 @@ const SpotCard = ({ spotId, status, reserved = false, onClick = () => {} }) => {
             <div className="spot-info">
                 <span className="spot-id">{spotId}</span>
                 <span className="spot-status">
-                    {isAvailable ? 'Disponível' : isOccupied ? 'Ocupado' : 'Reservado'}
+                    {isAvailable ? 'Available' : isOccupied ? 'Occupied' : 'Reserved'}
                 </span>
             </div>
             <div className="car-container">
@@ -31,7 +31,7 @@ const SpotCard = ({ spotId, status, reserved = false, onClick = () => {} }) => {
                     <CarIcon color="#c8e620" />
                 )}
             </div>
-            {reserved && <div className="reserved-badge">Reservado</div>}
+            {reserved && <div className="reserved-badge">Reserved</div>}
         </div>
     );
 };
@@ -40,6 +40,7 @@ SpotCard.propTypes = {
     spotId: PropTypes.string.isRequired,
     status: PropTypes.oneOf(['available', 'occupied', 'reserved']).isRequired,
     reserved: PropTypes.bool,
+    reservedPlate: PropTypes.string,
     onClick: PropTypes.func,
 };
 

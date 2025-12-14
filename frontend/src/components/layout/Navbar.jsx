@@ -4,6 +4,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import NotificationBell from '../NotificationBell';
 import './Navbar.css';
 
 const Navbar = () => {
@@ -92,6 +93,7 @@ const Navbar = () => {
                     <div className="nav-auth">
                         {isAuthenticated() ? (
                             <>
+                                <NotificationBell />
                                 <Link
                                     to="/perfil"
                                     className={`nav-link user-link ${isActive('/perfil').includes('active') ? 'active' : ''}`}

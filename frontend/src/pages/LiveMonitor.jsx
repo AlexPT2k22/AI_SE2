@@ -26,11 +26,21 @@ export default function LiveMonitor() {
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                setSpots(data);
+
+                // Check if this is a notification message
+                if (data.type === 'notification' && data.data) {
+                    // Notification messages are handled by NotificationBell component
+                    // Just log here for debugging
+                    console.log('[LiveMonitor] Notification received (handled by NotificationBell):', data.data.notification_type);
+                } else {
+                    // Regular spot status update
+                    setSpots(data);
+                }
             } catch (e) {
                 console.error('Failed to parse WebSocket message:', e);
             }
         };
+
 
         ws.onerror = (error) => {
             console.error('WebSocket error:', error);
@@ -70,7 +80,7 @@ export default function LiveMonitor() {
                         {wsStatus}
                     </span>
                     <span className="text-sm" style={{ marginLeft: 'auto' }}>
-                        Total: {spotNames.length} | Livres: {free} | Ocupados: {occupied}
+                        Total: {spotNames.length} | Free: {free} | Occupied: {occupied}
                     </span>
                 </div>
             </Card>
@@ -103,13 +113,13 @@ export default function LiveMonitor() {
                 <div style={{ gridColumn: 'span 1' }}>
                     <Card>
                         <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: '600', marginBottom: 'var(--spacing-4)' }}>
-                            Estado das Vagas
+                            Spot Status
                         </h2>
                         <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
                             <div className="flex flex-col gap-2">
                                 {spotNames.length === 0 ? (
                                     <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                                        A aguardar dados...
+                                        Waiting for data...
                                     </p>
                                 ) : (
                                     spotNames.map((name) => {
@@ -118,16 +128,23 @@ export default function LiveMonitor() {
                                         const isReserved = spot.reserved;
                                         const isViolation = spot.violation;
                                         const plate = spot.plate;
+                                        const reservedPlate = spot.reserved_plate || spot.reservation?.plate;
 
                                         let bgColor = isOccupied ? 'var(--color-danger)' : 'var(--color-success)';
                                         let borderStyle = '1px solid transparent';
-                                        let statusText = isOccupied ? 'OCUPADO' : 'LIVRE';
+                                        let statusText = isOccupied ? 'OCCUPIED' : 'FREE';
                                         let statusIcon = isOccupied ? '🚗' : '✓';
 
                                         if (isViolation) {
                                             bgColor = '#c41e3a';
                                             borderStyle = '3px solid var(--color-warning)';
                                             statusIcon = '⚠️';
+                                        } else if (isReserved && !isOccupied) {
+                                            // Reservado mas ainda livre
+                                            bgColor = 'var(--color-primary)';
+                                            borderStyle = '2px solid var(--color-warning)';
+                                            statusText = 'RESERVED';
+                                            statusIcon = '📅';
                                         } else if (isReserved) {
                                             borderStyle = '2px solid var(--color-primary)';
                                         }
@@ -169,6 +186,11 @@ export default function LiveMonitor() {
                                                 {spot.reservation?.plate && (
                                                     <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.85 }}>
                                                         Reserved for: <strong>{spot.reservation.plate}</strong>
+                                                    </div>
+                                                )}
+                                                {!isOccupied && reservedPlate && !spot.reservation?.plate && (
+                                                    <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.85 }}>
+                                                        🔖 Reserved for: <strong>{reservedPlate}</strong>
                                                     </div>
                                                 )}
                                             </div>

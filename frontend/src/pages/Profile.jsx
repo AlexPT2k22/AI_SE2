@@ -33,7 +33,8 @@ export default function Profile() {
         card_holder_name: '',
         expiry_month: '',
         expiry_year: '',
-        is_default: true  // Always default since only 1 card allowed
+        is_default: true,  // Always default since only 1 card allowed
+        auto_pay: false    // Automatic payment on exit
     });
 
     useEffect(() => {
@@ -54,7 +55,7 @@ export default function Profile() {
             setVehicles(vehiclesRes.vehicles || []);
             setPaymentMethods(methodsRes.payment_methods || []);
         } catch (err) {
-            setError('Erro ao carregar dados: ' + err.message);
+            setError('Error loading data: ' + err.message);
         } finally {
             setLoading(false);
         }
@@ -144,7 +145,7 @@ export default function Profile() {
                     <div className="flex justify-between items-center">
                         <div>
                             <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'bold' }}>
-                                My Profile
+                                {user?.full_name || 'My Profile'}
                             </h1>
                             <p style={{ color: 'var(--color-text-secondary)', marginTop: 'var(--spacing-1)' }}>
                                 {user?.email} • <span style={{
@@ -153,7 +154,7 @@ export default function Profile() {
                                     borderRadius: '4px',
                                     fontSize: 'var(--font-size-xs)'
                                 }}>
-                                    {user?.role === 'admin' ? 'Admin' : 'Cliente'}
+                                    {user?.role === 'admin' ? 'Admin' : 'Client'}
                                 </span>
                             </p>
                         </div>
@@ -339,6 +340,30 @@ export default function Profile() {
                                         required
                                     />
                                 </div>
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 'var(--spacing-3)',
+                                    padding: 'var(--spacing-3)',
+                                    backgroundColor: 'var(--color-surface)',
+                                    borderRadius: 'var(--border-radius-md)',
+                                    marginTop: 'var(--spacing-2)'
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        id="auto_pay"
+                                        checked={newCard.auto_pay}
+                                        onChange={(e) => setNewCard({ ...newCard, auto_pay: e.target.checked })}
+                                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                    />
+                                    <label htmlFor="auto_pay" style={{ cursor: 'pointer' }}>
+                                        <span style={{ fontWeight: '600' }}>Enable Automatic Payment</span>
+                                        <br />
+                                        <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                                            Your card will be charged automatically when you exit the parking
+                                        </span>
+                                    </label>
+                                </div>
                                 <Button type="submit" style={{ marginTop: 'var(--spacing-4)' }}>Add Card</Button>
                             </form>
                         )}
@@ -361,6 +386,16 @@ export default function Profile() {
                                         <div>
                                             <div style={{ fontWeight: '600' }}>
                                                 {pm.card_type.toUpperCase()} •••• {pm.card_last_four}
+                                                {pm.auto_pay && (
+                                                    <span style={{
+                                                        marginLeft: '8px',
+                                                        backgroundColor: 'var(--color-success)',
+                                                        color: 'white',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '4px',
+                                                        fontSize: 'var(--font-size-xs)'
+                                                    }}>AUTO PAY</span>
+                                                )}
                                             </div>
                                             <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
                                                 {pm.card_holder_name} • Exp: {pm.expiry_month}/{pm.expiry_year}

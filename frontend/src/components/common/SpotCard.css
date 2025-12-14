@@ -3,7 +3,6 @@
   border-radius: var(--border-radius-xl);
   padding: var(--spacing-3);
   box-shadow: var(--shadow-sm);
-  cursor: pointer;
   transition: var(--transition-base);
   display: flex;
   flex-direction: column;
@@ -80,11 +79,9 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--color-surface-active) 10%,
-    var(--color-surface-active) 90%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg,
+      transparent 0%,
+      var(--color-surface-active) 10%,
+      var(--color-surface-active) 90%,
+      transparent 100%);
 }

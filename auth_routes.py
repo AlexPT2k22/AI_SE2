@@ -34,11 +34,25 @@ router = APIRouter()
 
 # Referência ao pool de BD (será injetada pelo main.py)
 db_pool: Optional[asyncpg.Pool] = None
+_refresh_reservations_callback = None
 
 def set_db_pool(pool: asyncpg.Pool):
     """Injetar o pool de BD."""
     global db_pool
     db_pool = pool
+
+def set_refresh_reservations_callback(callback):
+    """Define o callback para atualizar o cache de reservas."""
+    global _refresh_reservations_callback
+    _refresh_reservations_callback = callback
+
+async def _trigger_reservations_refresh():
+    """Chama o callback para atualizar o cache de reservas."""
+    if _refresh_reservations_callback:
+        try:
+            await _refresh_reservations_callback()
+        except Exception as e:
+            print(f"[WARN] Erro ao atualizar cache de reservas: {e}")
 
 
 # =====================================================
@@ -243,7 +257,21 @@ async def list_notifications(unread_only: bool = False, authorization: Optional[
     
     user = require_auth(authorization)
     notifications = await get_user_notifications(db_pool, user["user_id"], unread_only)
-    return {"notifications": notifications}
+    
+    # Normalizar campo is_read para read para o frontend
+    normalized = []
+    for n in notifications:
+        normalized.append({
+            "id": n["id"],
+            "title": n["title"],
+            "body": n["body"],
+            "notification_type": n["notification_type"],
+            "data": n.get("data"),
+            "read": n["is_read"],  # Mapear is_read para read
+            "created_at": n["created_at"].isoformat() if n["created_at"] else None
+        })
+    
+    return {"notifications": normalized}
 
 
 @router.post("/api/user/notifications/{notification_id}/read")
@@ -257,6 +285,40 @@ async def mark_as_read(notification_id: int, authorization: Optional[str] = Head
     if not success:
         raise HTTPException(status_code=404, detail="Notificação não encontrada")
     return {"message": "Notificação marcada como lida"}
+
+
+@router.post("/api/user/notifications/read-all")
+async def mark_all_as_read(authorization: Optional[str] = Header(None)):
+    """Marcar todas as notificações como lidas."""
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Base de dados indisponível")
+    
+    user = require_auth(authorization)
+    
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE public.parking_notifications SET is_read = TRUE WHERE user_id = $1",
+            user["user_id"]
+        )
+    
+    return {"message": "Todas as notificações marcadas como lidas"}
+
+
+@router.delete("/api/user/notifications/clear")
+async def clear_all_notifications(authorization: Optional[str] = Header(None)):
+    """Apagar todas as notificações."""
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Base de dados indisponível")
+    
+    user = require_auth(authorization)
+    
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM public.parking_notifications WHERE user_id = $1",
+            user["user_id"]
+        )
+    
+    return {"message": "Notificações eliminadas"}
 
 
 # =====================================================
@@ -316,6 +378,9 @@ async def create_reservation(payload: ReservationPayload, authorization: Optiona
                 reservation_date
             )
             
+            # Atualizar cache de reservas no main.py
+            await _trigger_reservations_refresh()
+            
             return {
                 "reservation": {
                     "id": row["id"],
@@ -371,18 +436,21 @@ async def list_reservations(authorization: Optional[str] = Header(None)):
 async def cancel_reservation(spot: str, authorization: Optional[str] = Header(None)):
     """
     Cancelar reserva por nome da vaga.
-    Só é possível cancelar reservas futuras (não para hoje).
+    Só é possível cancelar nas primeiras 2 horas após criar a reserva.
     """
     if not db_pool:
         raise HTTPException(status_code=500, detail="Base de dados indisponível")
     
     user = require_auth(authorization)
     
+    # Prazo para cancelamento: 2 horas após criação
+    CANCELLATION_WINDOW_HOURS = 2
+    
     async with db_pool.acquire() as conn:
         # Verificar se a reserva existe e pertence ao utilizador
         row = await conn.fetchrow(
             """
-            SELECT id, reservation_date 
+            SELECT id, reservation_date, created_at 
             FROM public.parking_manual_reservations 
             WHERE spot = $1 AND user_id = $2
             """,
@@ -393,13 +461,90 @@ async def cancel_reservation(spot: str, authorization: Optional[str] = Header(No
         if not row:
             raise HTTPException(status_code=404, detail="Reserva não encontrada")
         
+        # Verificar se ainda está dentro do prazo de cancelamento (2 horas)
+        created_at = row["created_at"]
+        now = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.now()
+        time_since_creation = now - created_at
+        hours_since_creation = time_since_creation.total_seconds() / 3600
+        
+        if hours_since_creation > CANCELLATION_WINDOW_HOURS:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Prazo de cancelamento expirado. Só pode cancelar nas primeiras {CANCELLATION_WINDOW_HOURS} horas após criar a reserva."
+            )
+        
         # Cancelar
         await conn.execute(
             "DELETE FROM public.parking_manual_reservations WHERE id = $1",
             row["id"]
         )
         
-        return {"message": "Reserva cancelada", "spot": spot}
+        # Atualizar cache de reservas no main.py
+        await _trigger_reservations_refresh()
+        
+        return {"message": "Reserva cancelada com sucesso", "spot": spot}
+
+
+# =====================================================
+# SESSÕES DO UTILIZADOR
+# =====================================================
+
+@router.get("/api/user/sessions")
+async def list_user_sessions(
+    status: Optional[str] = None,
+    limit: int = 50,
+    authorization: Optional[str] = Header(None)
+):
+    """Listar sessões do utilizador autenticado."""
+    user = get_jwt_user(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel")
+    
+    async with db_pool.acquire() as conn:
+        # Filtrar sessões pelo user_id
+        if status:
+            rows = await conn.fetch(
+                """
+                SELECT id, plate, spot, entry_time, exit_time, amount_due, amount_paid, status
+                FROM public.parking_sessions
+                WHERE user_id = $1 AND status = $2
+                ORDER BY entry_time DESC
+                LIMIT $3
+                """,
+                user["user_id"],
+                status,
+                limit
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, plate, spot, entry_time, exit_time, amount_due, amount_paid, status
+                FROM public.parking_sessions
+                WHERE user_id = $1
+                ORDER BY entry_time DESC
+                LIMIT $2
+                """,
+                user["user_id"],
+                limit
+            )
+    
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "id": row["id"],
+            "plate": row["plate"],
+            "spot": row["spot"],
+            "entry_time": row["entry_time"].isoformat() if row["entry_time"] else None,
+            "exit_time": row["exit_time"].isoformat() if row["exit_time"] else None,
+            "amount_due": float(row["amount_due"]) if row["amount_due"] else 0,
+            "amount_paid": float(row["amount_paid"]) if row["amount_paid"] else 0,
+            "status": row["status"]
+        })
+    
+    return {"sessions": sessions}
 
 
 # =====================================================

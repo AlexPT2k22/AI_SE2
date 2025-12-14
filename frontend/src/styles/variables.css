@@ -29,8 +29,15 @@
   /* Text - Dark for light background */
   --color-text-primary: #1a1a1a;
   --color-text-secondary: #666666;
+  --color-text-tertiary: #888888;
   --color-text-muted: #999999;
   --color-text-inverse: #ffffff;
+
+  /* Borders */
+  --color-border: #e5e5e5;
+
+  /* RGB values for opacity control */
+  --color-primary-rgb: 200, 230, 32;
 
   /* Spot Colors */
   --color-spot-available: #c8e620;
