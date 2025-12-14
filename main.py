@@ -712,6 +712,8 @@ async def notify_reservation_violation(
                 "SELECT id FROM public.parking_users WHERE role = 'admin'"
             )
             
+            print(f"[VIOLATION] Found {len(admin_rows)} admin(s) to notify")
+            
             for admin in admin_rows:
                 await conn.execute(
                     """
@@ -732,6 +734,7 @@ async def notify_reservation_violation(
                         "timestamp": datetime.now(tz=timezone.utc).isoformat()
                     })
                 )
+                print(f"[VIOLATION] ✅ Notification created for admin ID {admin['id']}")
             
             # 2. Notificar o dono da reserva (para a app mobile)
             if reserved_user_id:
@@ -938,8 +941,12 @@ def _handle_alpr_future(future: Future):
     allowed = {normalize_plate_text(p) for p in authorized if normalize_plate_text(p)}
     reservation_info = get_reservation_info(name)
     reserved = bool(base_reserved or reservation_info)
+    
+    # Adicionar matrícula reservada à lista de permitidos
+    reserved_plate_norm = None
     if reservation_info and reservation_info.get("plate_norm"):
-        allowed.add(reservation_info["plate_norm"])
+        reserved_plate_norm = reservation_info["plate_norm"]
+        allowed.add(reserved_plate_norm)
 
     if event.get("plate") and db_pool and event_loop:
         asyncio.run_coroutine_threadsafe(
@@ -948,9 +955,18 @@ def _handle_alpr_future(future: Future):
         )
 
     plate_norm = normalize_plate_text(event["plate"])
-    violation = bool(
-        reserved and allowed and (not plate_norm or plate_norm not in allowed)
-    )
+    
+    # Verificar violação: está reservado E matrícula diferente da reservada
+    # Violação = reservado E (matrícula detetada é diferente da reservada OU não conseguiu ler matrícula)
+    if reserved and reserved_plate_norm:
+        violation = bool(not plate_norm or plate_norm != reserved_plate_norm)
+    elif reserved and allowed:
+        violation = bool(not plate_norm or plate_norm not in allowed)
+    else:
+        violation = False
+    
+    print(f"[DEBUG] Spot {name}: reserved={reserved}, plate_norm={plate_norm}, reserved_plate_norm={reserved_plate_norm}, violation={violation}")
+    
     event["reserved"] = reserved
     event["violation"] = violation
     event["authorized"] = authorized
@@ -962,6 +978,7 @@ def _handle_alpr_future(future: Future):
     
     # NOTIFICAR ADMINS E DONOS DE RESERVA SOBRE VIOLAÇÃO
     if violation and db_pool and event_loop:
+        print(f"[VIOLATION] 🚨 Calling notify_reservation_violation for {name}")
         asyncio.run_coroutine_threadsafe(
             notify_reservation_violation(
                 spot=name,
