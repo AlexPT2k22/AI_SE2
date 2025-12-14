@@ -790,27 +790,9 @@ async def notify_reservation_violation(
                         "timestamp": datetime.now(tz=timezone.utc).isoformat()
                     })
                 )
-                print(f"[VIOLATION] ✅ Notification created for admin ID {admin['id']}")
+            print(f"[VIOLATION] ✅ Notification created for admin ID {admin['id']}")
             
-            # 2. Notificar o dono da reserva (para a app mobile)
-            if reserved_user_id:
-                await conn.execute(
-                    """
-                    INSERT INTO public.parking_notifications 
-                        (user_id, title, body, notification_type, data)
-                    VALUES ($1, $2, $3, $4, $5)
-                    """,
-                    reserved_user_id,
-                    f"⚠️ Someone parked in your spot!",
-                    f"Vehicle {intruder_plate} is parked in spot {spot} which you reserved. Please contact support.",
-                    "reservation_violation",
-                    json.dumps({
-                        "spot": spot,
-                        "intruder_plate": intruder_plate,
-                        "your_plate": reserved_plate,
-                        "timestamp": datetime.now(tz=timezone.utc).isoformat()
-                    })
-                )
+            # NOTE: Não notificamos o dono da reserva - apenas os admins são notificados
             
             # 3. Notificar o intruso (quem estacionou no lugar errado) - para a app mobile
             if intruder_user_id:
