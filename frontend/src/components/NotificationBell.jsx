@@ -15,6 +15,7 @@ const NotificationBell = () => {
     const wsRef = useRef(null);
     const dropdownRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
+    const shownToastsRef = useRef(new Set()); // Track shown toasts to prevent duplicates
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -88,9 +89,24 @@ const NotificationBell = () => {
                         });
                     }
 
-                    // Show toast for violation alerts
+                    // Show toast for violation alerts (only if not already shown)
                     if (notification.notification_type === 'violation_alert') {
-                        showToast(notification);
+                        // Create unique key based on spot, plate and timestamp (rounded to minute)
+                        const timestampMin = notification.timestamp
+                            ? Math.floor(new Date(notification.timestamp).getTime() / 60000)
+                            : Math.floor(Date.now() / 60000);
+                        const toastKey = `${notification.spot}-${notification.intruder_plate}-${timestampMin}`;
+
+                        // Check both DOM and our Set to prevent duplicates
+                        if (!shownToastsRef.current.has(toastKey)) {
+                            shownToastsRef.current.add(toastKey);
+                            showToast(notification, toastKey);
+
+                            // Clean up old keys after 5 minutes
+                            setTimeout(() => {
+                                shownToastsRef.current.delete(toastKey);
+                            }, 300000);
+                        }
                     }
                 }
             } catch (e) {
@@ -117,16 +133,19 @@ const NotificationBell = () => {
     }, [isAuthenticated]);
 
     // Show toast notification
-    const showToast = (notification) => {
+    const showToast = (notification, toastKey = null) => {
         const toast = document.createElement('div');
         toast.className = 'notification-toast violation';
+        if (toastKey) {
+            toast.setAttribute('data-toast-key', toastKey);
+        }
         toast.innerHTML = `
-            <div class="toast-icon">⚠️</div>
+            <div class="toast-icon">!</div>
             <div class="toast-content">
                 <div class="toast-title">${notification.title}</div>
                 <div class="toast-body">${notification.body}</div>
             </div>
-            <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+            <button class="toast-close" onclick="this.parentElement.remove()">x</button>
         `;
 
         let container = document.querySelector('.toast-container');
@@ -207,11 +226,11 @@ const NotificationBell = () => {
     // Get notification icon based on type
     const getNotificationIcon = (type) => {
         switch (type) {
-            case 'violation_alert': return '🚨';
-            case 'reservation_violation': return '⚠️';
-            case 'fine': return '💰';
-            case 'payment': return '💳';
-            default: return '🔔';
+            case 'violation_alert': return '!';
+            case 'reservation_violation': return '!';
+            case 'fine': return '$';
+            case 'payment': return '$';
+            default: return 'i';
         }
     };
 
@@ -224,7 +243,7 @@ const NotificationBell = () => {
         const diffHours = Math.floor(diffMins / 60);
         const diffDays = Math.floor(diffHours / 24);
 
-        if (diffMins < 1) return 'agora';
+        if (diffMins < 1) return 'now';
         if (diffMins < 60) return `${diffMins}m`;
         if (diffHours < 24) return `${diffHours}h`;
         return `${diffDays}d`;
@@ -254,16 +273,16 @@ const NotificationBell = () => {
             {isOpen && (
                 <div className="notification-dropdown">
                     <div className="notification-header">
-                        <h3>Notificações</h3>
+                        <h3>Notifications</h3>
                         <div className="notification-actions">
                             {unreadCount > 0 && (
                                 <button onClick={markAllAsRead} className="action-btn">
-                                    Marcar todas
+                                    Mark all read
                                 </button>
                             )}
                             {notifications.length > 0 && (
                                 <button onClick={clearAll} className="action-btn danger">
-                                    Limpar
+                                    Clear
                                 </button>
                             )}
                         </div>
@@ -272,8 +291,8 @@ const NotificationBell = () => {
                     <div className="notification-list">
                         {notifications.length === 0 ? (
                             <div className="notification-empty">
-                                <span className="empty-icon">🔔</span>
-                                <p>Sem notificações</p>
+                                <span className="empty-icon">-</span>
+                                <p>No notifications</p>
                             </div>
                         ) : (
                             notifications.map((notification) => (

@@ -29,13 +29,9 @@ export default function LiveMonitor() {
 
                 // Check if this is a notification message
                 if (data.type === 'notification' && data.data) {
-                    const notification = data.data;
-                    console.log('[LiveMonitor] Received notification:', notification);
-
-                    // Show toast for violation alerts
-                    if (notification.notification_type === 'violation_alert') {
-                        showViolationToast(notification);
-                    }
+                    // Notification messages are handled by NotificationBell component
+                    // Just log here for debugging
+                    console.log('[LiveMonitor] Notification received (handled by NotificationBell):', data.data.notification_type);
                 } else {
                     // Regular spot status update
                     setSpots(data);
@@ -45,41 +41,6 @@ export default function LiveMonitor() {
             }
         };
 
-        // Show toast notification for violations
-        const showViolationToast = (notification) => {
-            const toast = document.createElement('div');
-            toast.className = 'notification-toast violation';
-            toast.innerHTML = `
-            <div class="toast-icon">🚨</div>
-            <div class="toast-content">
-                <div class="toast-title">${notification.title}</div>
-                <div class="toast-body">${notification.body}</div>
-            </div>
-            <button class="toast-close" onclick="this.parentElement.remove()">×</button>
-        `;
-
-            let container = document.querySelector('.toast-container');
-            if (!container) {
-                container = document.createElement('div');
-                container.className = 'toast-container';
-                document.body.appendChild(container);
-            }
-
-            container.appendChild(toast);
-
-            // Play notification sound
-            try {
-                const audio = new Audio('/notification.mp3');
-                audio.volume = 0.3;
-                audio.play().catch(() => { });
-            } catch (e) { }
-
-            // Auto-remove after 15 seconds
-            setTimeout(() => {
-                toast.classList.add('fade-out');
-                setTimeout(() => toast.remove(), 300);
-            }, 15000);
-        };
 
         ws.onerror = (error) => {
             console.error('WebSocket error:', error);

@@ -337,12 +337,12 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
                 for spot, info in g_active_reservations.items()
             ]
     async with db_pool.acquire() as conn:
-        # Buscar reservas ativas (só para hoje)
+        # Buscar reservas ativas (só para hoje e que ainda não foram usadas)
         rows = await conn.fetch(
             """
             SELECT id, spot, plate, plate_norm, user_id, reservation_date, was_used, created_at 
             FROM public.parking_manual_reservations
-            WHERE reservation_date = $1
+            WHERE reservation_date = $1 AND was_used = FALSE
             """,
             date.today()
         )
@@ -360,6 +360,7 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
                 "created_at": row["created_at"].timestamp() if row["created_at"] else None,
             }
             g_active_reservations[row["spot"]] = {
+                "id": row["id"],  # ID da reserva para marcar como usada
                 "plate_raw": row["plate"],
                 "plate_norm": row["plate_norm"],
                 "user_id": row["user_id"],
@@ -581,6 +582,41 @@ def get_reservation_info(name: str) -> Optional[Dict[str, Any]]:
     with g_reservations_lock:
         info = g_active_reservations.get(name)
         return dict(info) if info else None
+
+async def mark_reservation_as_used(reservation_id: Optional[int], spot_name: Optional[str] = None):
+    """
+    Marca uma reserva como usada quando o carro correto estaciona na vaga reservada.
+    Também remove do cache para que a vaga deixe de aparecer como 'Reserved'.
+    """
+    if not reservation_id or not db_pool:
+        return
+    
+    try:
+        async with db_pool.acquire() as conn:
+            # Primeiro buscar o spot se não foi fornecido
+            if not spot_name:
+                row = await conn.fetchrow(
+                    "SELECT spot FROM public.parking_manual_reservations WHERE id = $1",
+                    reservation_id
+                )
+                if row:
+                    spot_name = row["spot"]
+            
+            result = await conn.execute(
+                "UPDATE public.parking_manual_reservations SET was_used = TRUE WHERE id = $1 AND was_used = FALSE",
+                reservation_id
+            )
+            if "UPDATE 1" in result:
+                print(f"[RESERVATION] ✅ Reservation {reservation_id} marked as used")
+                
+                # Remover do cache para que a vaga deixe de aparecer como reservada
+                if spot_name:
+                    with g_reservations_lock:
+                        if spot_name in g_active_reservations:
+                            del g_active_reservations[spot_name]
+                            print(f"[RESERVATION] 🗑️ Removed reservation from cache for spot {spot_name}")
+    except Exception as e:
+        print(f"[ERROR] Failed to mark reservation as used: {e}")
 
 
 async def process_expired_reservations_daily():
@@ -988,6 +1024,13 @@ def _handle_alpr_future(future: Future):
             ),
             event_loop
         )
+    
+    # MARCAR RESERVA COMO USADA quando o carro correto estaciona (não é violação)
+    if reserved and not violation and reservation_info and plate_norm == reserved_plate_norm and db_pool and event_loop:
+        asyncio.run_coroutine_threadsafe(
+            mark_reservation_as_used(reservation_info.get("id"), name),
+            event_loop
+        )
 
     with g_plate_lock:
         g_plate_memory[event["spot"]] = {
@@ -1282,7 +1325,7 @@ async def parking_status():
                     """
                     SELECT spot, plate, plate_norm, user_id
                     FROM public.parking_manual_reservations
-                    WHERE reservation_date = $1
+                    WHERE reservation_date = $1 AND was_used = FALSE
                     """,
                     today
                 )
@@ -3542,7 +3585,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         """
                         SELECT spot, plate, plate_norm
                         FROM public.parking_manual_reservations
-                        WHERE reservation_date = $1
+                        WHERE reservation_date = $1 AND was_used = FALSE
                         """,
                         date.today()
                     )
