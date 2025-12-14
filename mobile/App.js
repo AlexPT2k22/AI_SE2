@@ -627,6 +627,18 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
     }
   };
   
+  // Set vehicle as primary
+  const setPrimaryVehicle = async (plate) => {
+    try {
+      await api.put(`/api/mobile/vehicles/${plate}/set-primary`);
+      showToast('success', 'Veículo principal', `${plate} é agora o veículo principal`);
+      loadUserData();
+      if (onSetupChange) onSetupChange();
+    } catch (e) {
+      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao definir veículo principal');
+    }
+  };
+  
   // Add payment card
   const addCard = async () => {
     if (!cardForm.card_number.trim() || !cardForm.card_holder_name.trim()) {
@@ -780,25 +792,60 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
           </View>
         ) : (
           vehicles.map((v) => (
-            <View key={v.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View key={v.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: v.is_primary ? theme.primary : theme.border, borderWidth: v.is_primary ? 2 : 1 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <CarIcon size={24} color={theme.primary} />
+                <View style={{ 
+                  width: 40, 
+                  height: 40, 
+                  borderRadius: 20, 
+                  backgroundColor: v.is_primary ? theme.primary + '20' : theme.background,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <CarIcon size={22} color={v.is_primary ? theme.primary : theme.textSecondary} />
+                </View>
                 <View style={{ marginLeft: 12, flex: 1 }}>
-                  <Text style={[styles.vehiclePlate, { color: theme.text }]}>{v.plate}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.vehiclePlate, { color: theme.text }]}>{v.plate}</Text>
+                    {v.is_primary && (
+                      <View style={{
+                        backgroundColor: theme.primary,
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                        marginLeft: 8,
+                      }}>
+                        <Text style={{ fontSize: 9, fontWeight: '600', color: theme.secondary }}>PRINCIPAL</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={[{ color: theme.textSecondary, fontSize: 12 }]}>
                     {[v.brand, v.model, v.color].filter(Boolean).join(' • ') || 'Sem detalhes'}
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={[styles.deleteButton, { backgroundColor: theme.danger }]}
-                onPress={() => {
-                  triggerHaptic('medium');
-                  removeVehicle(v.id, v.plate);
-                }}
-              >
-                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Remover</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {!v.is_primary && (
+                  <TouchableOpacity
+                    style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setPrimaryVehicle(v.plate);
+                    }}
+                  >
+                    <Text style={{ color: theme.secondary, fontSize: 11, fontWeight: '600' }}>Principal</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.deleteButton, { backgroundColor: theme.danger }]}
+                  onPress={() => {
+                    triggerHaptic('medium');
+                    removeVehicle(v.id, v.plate);
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>Remover</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))
         )}
@@ -925,7 +972,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
           paymentMethods.slice(0, 1).map((pm) => (
             <View key={pm.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <CreditCardIcon size={24} color={theme.info} />
+                <CreditCardIcon size={24} color={theme.primary} />
                 <View style={{ marginLeft: 12, flex: 1 }}>
                   <Text style={[styles.vehiclePlate, { color: theme.text }]}>
                     {pm.card_type?.toUpperCase()} •••• {pm.card_last_four}
@@ -1008,12 +1055,31 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedSpot, setSelectedSpot] = useState(null);
   const [reserveForToday, setReserveForToday] = useState(true); // true = today, false = tomorrow
+  const [selectedVehicleForReservation, setSelectedVehicleForReservation] = useState(null);
   
   // Confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmSpot, setConfirmSpot] = useState(null);
   const [spotReservationStatus, setSpotReservationStatus] = useState({}); // { today_reserved: bool, tomorrow_reserved: bool }
+  
+  // Animation for reservation modal slide up
+  const reserveModalSlideAnim = useRef(new Animated.Value(300)).current;
+  
+  // Trigger slide animation when modal visibility changes
+  useEffect(() => {
+    if (showReserveModal) {
+      // Slide up
+      Animated.timing(reserveModalSlideAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      // Reset to bottom for next open
+      reserveModalSlideAnim.setValue(300);
+    }
+  }, [showReserveModal]);
   
   // Timer state for active sessions
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -1209,6 +1275,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     setSelectedSpot(spotName);
     setReserveForToday(true);
     
+    // Auto-select primary vehicle or first vehicle if only one
+    const primaryVehicle = userVehicles.find(v => v.is_primary);
+    setSelectedVehicleForReservation(primaryVehicle?.plate || userVehicles[0]?.plate || null);
+    
     // Check if this spot already has reservations for today/tomorrow (from any user)
     try {
       const res = await api.get('/api/reservations/check', { 
@@ -1225,10 +1295,15 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
 
   const handleReserve = async () => {
     if (!selectedSpot) return;
+    if (!selectedVehicleForReservation) {
+      showToast('error', 'Selecione um veículo', 'Escolha qual carro vai usar nesta reserva.');
+      return;
+    }
     try {
       await api.post('/api/mobile/reservations', { 
         spot: selectedSpot, 
-        reservation_date: reserveForToday ? 'today' : 'tomorrow'
+        reservation_date: reserveForToday ? 'today' : 'tomorrow',
+        plate: selectedVehicleForReservation
       });
       showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada para ${reserveForToday ? 'hoje' : 'amanhã'}. Multa de 20€ se não usar.`);
       setShowReserveModal(false);
@@ -1640,13 +1715,135 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
       <Modal
         visible={showReserveModal}
         transparent={true}
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setShowReserveModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+          <Animated.View 
+            style={[
+              styles.modalContent, 
+              { 
+                backgroundColor: theme.surface,
+                transform: [{ translateY: reserveModalSlideAnim }],
+              }
+            ]}
+          >
             <Text style={[styles.modalTitle, { color: theme.text }]}>Reservar {selectedSpot}</Text>
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Selecione o dia</Text>
+            
+            {/* Vehicle Selector - scrollable list for scalability */}
+            {userVehicles.length > 0 && (
+              <>
+                <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: 8 }]}>
+                  {userVehicles.length > 1 ? 'Selecione o veículo' : 'Veículo'}
+                </Text>
+                <View style={{ 
+                  maxHeight: userVehicles.length > 3 ? 150 : undefined, 
+                  marginBottom: 12,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                }}>
+                  <ScrollView 
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={userVehicles.length > 3}
+                  >
+                    {userVehicles.map((vehicle, index) => {
+                      const isSelected = selectedVehicleForReservation === vehicle.plate;
+                      return (
+                        <TouchableOpacity
+                          key={vehicle.plate}
+                          style={[
+                            {
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: 12,
+                              backgroundColor: isSelected ? theme.primary : theme.background,
+                              borderWidth: 1,
+                              borderColor: isSelected ? theme.primary : theme.border,
+                              borderRadius: 10,
+                              marginBottom: index < userVehicles.length - 1 ? 8 : 0,
+                            }
+                          ]}
+                          onPress={() => {
+                            triggerHaptic('light');
+                            setSelectedVehicleForReservation(vehicle.plate);
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            {/* Car icon */}
+                            <View style={{ 
+                              width: 36, 
+                              height: 36, 
+                              borderRadius: 18, 
+                              backgroundColor: isSelected ? theme.secondary + '20' : theme.surface,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              marginRight: 12,
+                            }}>
+                              <CarIcon size={22} color={isSelected ? theme.secondary : theme.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={[
+                                  { 
+                                    fontSize: 15, 
+                                    fontWeight: '600',
+                                    color: isSelected ? theme.secondary : theme.text,
+                                  }
+                                ]}>
+                                  {vehicle.plate}
+                                </Text>
+                                {vehicle.is_primary && (
+                                  <View style={{
+                                    backgroundColor: isSelected ? theme.secondary : theme.primary,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 2,
+                                    borderRadius: 4,
+                                    marginLeft: 8,
+                                  }}>
+                                    <Text style={{ 
+                                      fontSize: 9, 
+                                      fontWeight: '600',
+                                      color: isSelected ? theme.primary : theme.secondary,
+                                    }}>
+                                      PRINCIPAL
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                              {vehicle.created_at && (
+                                <Text style={{ 
+                                  fontSize: 11, 
+                                  color: isSelected ? theme.secondary + '80' : theme.textSecondary,
+                                  marginTop: 2,
+                                }}>
+                                  Adicionado em {new Date(vehicle.created_at).toLocaleDateString('pt-PT')}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                          {/* Checkmark for selected */}
+                          {isSelected && (
+                            <View style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: 12,
+                              backgroundColor: theme.secondary,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}>
+                              <Text style={{ color: theme.primary, fontWeight: 'bold', fontSize: 14 }}>✓</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </>
+            )}
+            
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginTop: 4 }]}>Selecione o dia</Text>
             
             <View style={styles.durationGrid}>
               <TouchableOpacity
@@ -1740,7 +1937,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 <Text style={[styles.buttonText, { color: theme.secondary }]}>Reservar</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
       
@@ -2570,5 +2767,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 16,
     width: '100%',
+  },
+  smallButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
 });

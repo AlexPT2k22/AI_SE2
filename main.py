@@ -1122,6 +1122,7 @@ async def debug_list_overrides():
 class ReservationPayload(BaseModel):
     spot: str = Field(..., min_length=1)
     reservation_date: str = Field(default="today")  # "today" or "tomorrow"
+    plate: Optional[str] = None  # Optional: which vehicle to use
 
 
 class AuthPayload(BaseModel):
@@ -1586,25 +1587,41 @@ async def mobile_create_reservation(
 
     if db_pool:
         async with db_pool.acquire() as conn:
-            # Get primary vehicle plate
-            vehicle = await conn.fetchrow(
-                """
-                SELECT plate, plate_norm FROM public.parking_user_vehicles 
-                WHERE user_id = $1 AND is_primary = TRUE
-                LIMIT 1
-                """,
-                user_id
-            )
-            if not vehicle:
-                # Try any vehicle
+            # If plate is specified in payload, validate it belongs to user
+            if payload.plate:
                 vehicle = await conn.fetchrow(
                     """
                     SELECT plate, plate_norm FROM public.parking_user_vehicles 
-                    WHERE user_id = $1
+                    WHERE user_id = $1 AND plate = $2
+                    """,
+                    user_id,
+                    payload.plate
+                )
+                if not vehicle:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Veiculo nao encontrado ou nao pertence a si."
+                    )
+            else:
+                # Get primary vehicle plate
+                vehicle = await conn.fetchrow(
+                    """
+                    SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                    WHERE user_id = $1 AND is_primary = TRUE
                     LIMIT 1
                     """,
                     user_id
                 )
+                if not vehicle:
+                    # Try any vehicle
+                    vehicle = await conn.fetchrow(
+                        """
+                        SELECT plate, plate_norm FROM public.parking_user_vehicles 
+                        WHERE user_id = $1
+                        LIMIT 1
+                        """,
+                        user_id
+                    )
             if not vehicle:
                 raise HTTPException(
                     status_code=400, 
@@ -1850,6 +1867,41 @@ async def mobile_add_vehicle(payload: VehiclePayload, authorization: Optional[st
         )
     
     return {"plate": plate, "message": "Veiculo adicionado com sucesso."}
+
+
+@app.put("/api/mobile/vehicles/{plate}/set-primary")
+async def mobile_set_primary_vehicle(plate: str, authorization: Optional[str] = Header(None)):
+    """Set a vehicle as the primary vehicle for authenticated mobile user."""
+    user = await require_mobile_auth(authorization)
+    user_id = user["user_id"]
+    
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Base de dados indisponivel.")
+    
+    plate_norm = normalize_plate_text(plate)
+    
+    async with db_pool.acquire() as conn:
+        # Verify vehicle belongs to user
+        vehicle = await conn.fetchrow(
+            "SELECT id FROM public.parking_user_vehicles WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Veiculo nao encontrado.")
+        
+        # Reset all vehicles to non-primary
+        await conn.execute(
+            "UPDATE public.parking_user_vehicles SET is_primary = FALSE WHERE user_id = $1",
+            user_id
+        )
+        
+        # Set this one as primary
+        await conn.execute(
+            "UPDATE public.parking_user_vehicles SET is_primary = TRUE WHERE user_id = $1 AND plate_norm = $2",
+            user_id, plate_norm
+        )
+    
+    return {"plate": plate, "is_primary": True, "message": "Veiculo definido como principal."}
 
 
 @app.delete("/api/mobile/vehicles/{plate}")
