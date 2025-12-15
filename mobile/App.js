@@ -108,15 +108,15 @@ const MoonIcon = ({ size = 24, color = '#666666' }) => (
 
 // API Configuration
 //const API_BASE_URL = 'http://10.0.2.2:8000'; // Android emulator
-const API_BASE_URL = 'http://192.168.68.125:8000'; // Replace with your IP for physical device
+const API_BASE_URL = 'http://192.168.243.164:8000'; // Replace with your IP for physical device
 
 // WebSocket URL (derived from API URL)
 const WS_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws';
 
 // Colors - Light Theme (matching frontend)
 const lightColors = {
-  primary: '#97d700',          // Lime Green
-  primaryDark: '#31a100',
+  primary: '#c8e620',          // Lime Green
+  primaryDark: '#9fc21a',
   secondary: '#1e1e1e',        // Dark
   background: '#f5f5f5',       // Light gray
   surface: '#ffffff',          // White
