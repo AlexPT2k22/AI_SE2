@@ -10,7 +10,7 @@ const char *password = "123456789rafael";
 //const char *ssid = "MEO-80A450";
 //const char *password = "29e5854ca7";
 
-// ⚠️ CONFIGURAÇÕES DA SAÍDA (DIFERENTES DA ENTRADA)
+// CONFIGURAÇÕES DA SAÍDA (DIFERENTES DA ENTRADA)
 const char* serverHost = "10.254.177.133";
 const int serverPort = 8000;
 const char* serverPath = "/api/exit";          // ← ENDPOINT DE SAÍDA
@@ -124,7 +124,7 @@ static esp_err_t index_handler(httpd_req_t *req) {
     "setInterval(updateDistance, 1000);"
     "</script>"
     "</head><body onload='updateDistance()'>"
-    "<h1>🚪 SAÍDA - Gate Camera</h1>"
+    "<h1>SAÍDA - Gate Camera</h1>"
     "<p>Modo Simples - Sensor Ultrassônico</p>"
     "<div id='distance'>-- cm</div>"
     "<button class='btn-primary' onclick=\"document.getElementById('img').src='/capture?'+Date.now()\">Atualizar Foto</button><br>"
@@ -306,7 +306,7 @@ void loop() {
   if (distance > 0 && distance <= DETECTION_DISTANCE && (now - lastTriggerTime) > DEBOUNCE_DELAY) {
     lastTriggerTime = now;
 
-    Serial.print("🚗 Veículo detectado na SAÍDA a ");
+    Serial.print("Veículo detectado na SAÍDA a ");
     Serial.print(distance);
     Serial.println(" cm");
     
@@ -331,16 +331,16 @@ void captureAndSend() {
   digitalWrite(4, LOW);
 
   if (!fb) {
-    Serial.println("❌ Erro: esp_camera_fb_get falhou!");
+    Serial.println("Erro: esp_camera_fb_get falhou!");
     systemBusy = false;
     return;
   }
   
-  Serial.printf("📸 Foto capturada: %u bytes\n", fb->len);
+  Serial.printf("Foto capturada: %u bytes\n", fb->len);
 
   WiFiClient client;
   if (client.connect(serverHost, serverPort)) {
-    Serial.println("🌐 Conectado ao servidor!");
+    Serial.println("Conectado ao servidor!");
 
     String boundary = "----WebKitFormBoundary" + String(millis());
     String head = "--" + boundary + "\r\n";
@@ -383,22 +383,22 @@ void captureAndSend() {
           if (firstSpace > 0 && secondSpace > firstSpace) {
             String codeStr = line.substring(firstSpace + 1, secondSpace);
             httpStatusCode = codeStr.toInt();
-            Serial.print("📡 HTTP Status: ");
+            Serial.print("HTTP Status: ");
             Serial.println(httpStatusCode);
             
             // REAGE IMEDIATAMENTE ao status 200 (pagamento confirmado)
             if (httpStatusCode == 200 && !barrierOpened) {
-              Serial.println("✅ Status 200 - PAGAMENTO CONFIRMADO - ABRINDO BARREIRA");
+              Serial.println("Status 200 - PAGAMENTO CONFIRMADO - ABRINDO BARREIRA");
               setLeds(false, true);  // LED Verde
               
               servoBarreira.write(90);
-              Serial.println("🚧 Barreira aberta (90°)");
+              Serial.println("Barreira aberta (90°)");
               
               barrierOpened = true;
 
             } else if (httpStatusCode >= 400) {
               // Erro - Pagamento NÃO confirmado
-              Serial.println("❌ Status erro - PAGAMENTO NÃO CONFIRMADO");
+              Serial.println("Status erro - PAGAMENTO NÃO CONFIRMADO");
               setLeds(true, false);  // LED Vermelho
             }
           }
@@ -412,16 +412,16 @@ void captureAndSend() {
       }
     }
     
-    Serial.println("📨 Resposta da API:");
+    Serial.println("Resposta da API:");
     Serial.println(responseBody);
     
     // Processar resposta baseado no status code
     if (httpStatusCode == 200 && barrierOpened) {
       // HTTP 200 = Pagamento confirmado, pode sair
-      Serial.println("✅ Saída autorizada - aguardando passagem");
+      Serial.println("Saída autorizada - aguardando passagem");
       
       // Aguarda veículo passar
-      Serial.println("⏳ Aguardando veículo passar...");
+      Serial.println("Aguardando veículo passar...");
       unsigned long startWait = millis();
       unsigned long clearStartTime = 0;
       bool vehiclePassed = false;
@@ -434,18 +434,18 @@ void captureAndSend() {
           // Veículo saiu da zona de detecção
           if (clearStartTime == 0) {
             clearStartTime = millis();
-            Serial.print("↗️ Distância livre: ");
+            Serial.print("Distância livre: ");
             Serial.print(dist);
             Serial.println(" cm - confirmando...");
           } else if (millis() - clearStartTime >= CLEAR_CONFIRM_TIME) {
             vehiclePassed = true;
-            Serial.println("✓ Veículo passou - confirmado!");
+            Serial.println("Veículo passou - confirmado!");
             break;
           }
         } else {
           // Veículo ainda na zona - reseta contador
           if (clearStartTime > 0) {
-            Serial.println("↩️ Veículo ainda presente - resetando confirmação");
+            Serial.println("Veículo ainda presente - resetando confirmação");
             clearStartTime = 0;
           }
         }
@@ -454,25 +454,25 @@ void captureAndSend() {
       }
       
       if (!vehiclePassed) {
-        Serial.println("⏱️ Timeout - fechando por segurança");
+        Serial.println("Timeout - fechando por segurança");
       }
       
       // Aguarda mais 3 segundos
-      Serial.println("⏱️ Aguardando 3s para fechar...");
+      Serial.println("Aguardando 3s para fechar...");
       delay(3000);
       
       // Fecha servo (0 graus)
       servoBarreira.write(0);
       setLeds(true, false);
       
-      Serial.println("🚧 Barreira fechada");
+      Serial.println("Barreira fechada");
       
       // Libera sistema para próxima detecção
       systemBusy = false;
       
     } else if (httpStatusCode >= 400) {
       // Erro - Pagamento não encontrado ou expirado
-      Serial.println("❌ ERRO - Saída negada");
+      Serial.println("ERRO - Saída negada");
       
       bool isNotPaid = false;
       bool isExpired = false;
@@ -500,13 +500,13 @@ void captureAndSend() {
 
       // Escolher tipo de pisca
       if (isExpired) {
-        Serial.println("⏰ Pagamento expirado (>10min) - pisca 5 vezes");
+        Serial.println("Pagamento expirado (>10min) - pisca 5 vezes");
         flashBothLeds(5, 150);
       } else if (isNotPaid) {
-        Serial.println("💰 Não pagou - pisca 3 vezes");
+        Serial.println("Não pagou - pisca 3 vezes");
         flashBothLeds(3, 150);
       } else {
-        Serial.println("❓ Erro desconhecido - pisca 2 vezes");
+        Serial.println("Erro desconhecido - pisca 2 vezes");
         flashBothLeds(2, 150);
       }
       
@@ -518,13 +518,13 @@ void captureAndSend() {
       
     } else {
       // Sem status válido ou timeout
-      Serial.println("⚠️ Resposta inválida ou timeout");
+      Serial.println("Resposta inválida ou timeout");
       systemBusy = false;
     }
     
     client.stop();
   } else {
-    Serial.println("❌ Falha ao conectar na API");
+    Serial.println("Falha ao conectar na API");
     systemBusy = false;
   }
   
