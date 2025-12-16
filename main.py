@@ -369,6 +369,7 @@ async def refresh_reservations_cache() -> List[Dict[str, Any]]:
             # Cache key includes date to allow same spot on different days
             cache_key = f"{row['spot']}_{row['reservation_date'].isoformat()}" if row["reservation_date"] else row["spot"]
             g_active_reservations[cache_key] = {
+                "id": row["id"],  # Incluir ID para mark_reservation_as_used
                 "plate_raw": row["plate"],
                 "plate_norm": row["plate_norm"],
                 "user_id": row["user_id"],
@@ -600,10 +601,29 @@ async def apply_reservation_fines(expired_reservations: List[Dict]):
 
 
 def get_reservation_info(name: str) -> Optional[Dict[str, Any]]:
+    """
+    Busca informação de reserva para uma vaga.
+    As reservas estão guardadas com chave no formato 'spot_date' (ex: vaga01_2024-12-16).
+    """
+    from datetime import date
     prune_expired_reservations()
+    today_str = date.today().isoformat()
+    cache_key = f"{name}_{today_str}"
+    
     with g_reservations_lock:
-        info = g_active_reservations.get(name)
-        return dict(info) if info else None
+        # Primeiro tentar com a chave correta (spot_date)
+        info = g_active_reservations.get(cache_key)
+        if info:
+            return dict(info)
+        
+        # Fallback: procurar por spot name em todas as reservas de hoje
+        for key, res_info in g_active_reservations.items():
+            res_spot = res_info.get("spot") or key.split("_")[0]
+            res_date = res_info.get("reservation_date", "")
+            if res_spot == name and res_date == today_str:
+                return dict(res_info)
+    
+    return None
 
 async def mark_reservation_as_used(reservation_id: Optional[int], spot_name: Optional[str] = None):
     """
@@ -633,10 +653,18 @@ async def mark_reservation_as_used(reservation_id: Optional[int], spot_name: Opt
                 
                 # Remover do cache para que a vaga deixe de aparecer como reservada
                 if spot_name:
+                    from datetime import date
+                    today_str = date.today().isoformat()
+                    cache_key = f"{spot_name}_{today_str}"
                     with g_reservations_lock:
-                        if spot_name in g_active_reservations:
+                        # Tentar remover com chave spot_date
+                        if cache_key in g_active_reservations:
+                            del g_active_reservations[cache_key]
+                            print(f"[RESERVATION] 🗑️ Removed reservation from cache: {cache_key}")
+                        # Fallback: remover com chave antiga (apenas spot_name)
+                        elif spot_name in g_active_reservations:
                             del g_active_reservations[spot_name]
-                            print(f"[RESERVATION] 🗑️ Removed reservation from cache for spot {spot_name}")
+                            print(f"[RESERVATION] 🗑️ Removed reservation from cache: {spot_name}")
     except Exception as e:
         print(f"[ERROR] Failed to mark reservation as used: {e}")
 
@@ -851,14 +879,27 @@ async def notify_reservation_violation(
         print(f"[ERROR] Failed to create violation notification: {e}")
 
 
-def extract_spot_crop(frame: np.ndarray, pts: np.ndarray) -> Optional[np.ndarray]:
-    mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-    cv2.fillPoly(mask, [pts], 255)
+def extract_spot_crop(frame: np.ndarray, pts: np.ndarray, expand_ratio: float = 1.5) -> Optional[np.ndarray]:
+    """
+    Extrai o crop de uma vaga do frame.
+    expand_ratio: fator de expansão da área (1.5 = 50% maior) para dar mais contexto ao ALPR.
+    """
     x, y, w, h = cv2.boundingRect(pts)
     if w <= 0 or h <= 0:
         return None
-    roi = cv2.bitwise_and(frame, frame, mask=mask)
-    crop = roi[y:y + h, x:x + w]
+    
+    # Calcular centro e nova dimensão expandida
+    cx, cy = x + w // 2, y + h // 2
+    new_w = int(w * expand_ratio)
+    new_h = int(h * expand_ratio)
+    
+    # Calcular novos limites com clipping para não sair do frame
+    x1 = max(0, cx - new_w // 2)
+    y1 = max(0, cy - new_h // 2)
+    x2 = min(frame.shape[1], x1 + new_w)
+    y2 = min(frame.shape[0], y1 + new_h)
+    
+    crop = frame[y1:y2, x1:x2]
     if crop.size == 0:
         return None
     return crop.copy()
@@ -2668,12 +2709,11 @@ async def api_exit(camera_id: str = Form(...), image: UploadFile = File(...)):
                     # Criar registo de pagamento
                     await conn.execute(
                         """
-                        INSERT INTO public.parking_payments (session_id, amount, payment_method, payment_type)
-                        VALUES ($1, $2, $3, 'auto_exit')
+                        INSERT INTO public.parking_payments (session_id, amount, payment_type)
+                        VALUES ($1, $2, 'auto_exit')
                         """,
                         session["id"],
-                        amount_due,
-                        f"card_{auto_pay_card['card_last_four']}"
+                        amount_due
                     )
                     
                     print(f"[EXIT] ✅ Pagamento automático efetuado! Valor: €{amount_due:.2f}")

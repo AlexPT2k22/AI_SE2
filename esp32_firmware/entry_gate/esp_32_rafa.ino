@@ -19,11 +19,11 @@
 #include <ESP32Servo.h>
 
 // =================== CONFIGURACOES DE REDE ===================
-const char *ssid = "POCO X3 Pro";
-const char *password = "123456789rafael";
+const char *ssid = "S23 FE de Alexandre";
+const char *password = "alexpt2k20";
 
 // =================== CONFIGURACOES DO SERVIDOR API ===================
-const char* serverHost = "10.254.177.133";
+const char* serverHost = "10.114.226.35";
 const int serverPort = 8000;
 const char* serverPath = "/api/entry";
 const char* cameraId = "gate-entrada";
@@ -37,7 +37,7 @@ const char* cameraId = "gate-entrada";
 #define FLASH_LED_PIN     4
 
 // =================== CONFIGURACOES DO SENSOR ===================
-#define DETECTION_DISTANCE 8    // Distancia em cm para detectar veiculo
+#define DETECTION_DISTANCE 16    // Distancia em cm para detectar veiculo
 #define DEBOUNCE_DELAY     5000 // Delay entre deteccoes (ms)
 
 // =================== PINOS ESP32-CAM (AI-Thinker) ===================

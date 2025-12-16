@@ -5,13 +5,13 @@
 #include <ESP32Servo.h>
 
 // =================== CONFIGURAÇÕES ===================
-const char *ssid = "POCO X3 Pro";
-const char *password = "123456789rafael";
+const char *ssid = "S23 FE de Alexandre";
+const char *password = "alexpt2k20";
 //const char *ssid = "MEO-80A450";
 //const char *password = "29e5854ca7";
 
 // CONFIGURAÇÕES DA SAÍDA (DIFERENTES DA ENTRADA)
-const char* serverHost = "10.254.177.133";
+const char* serverHost = "10.114.226.35";
 const int serverPort = 8000;
 const char* serverPath = "/api/exit";          // ← ENDPOINT DE SAÍDA
 const char* cameraId = "gate-saida";           // ← IDENTIFICADOR DE SAÍDA
@@ -28,7 +28,7 @@ volatile bool systemBusy = false;  // Previne múltiplos triggers simultâneos
 #define LED_GREEN_PIN 13    // LED RGB - Verde
 
 // =================== CONFIGURAÇÕES DO SENSOR ===================
-#define DETECTION_DISTANCE 8  // Distância em cm para detectar veículo
+#define DETECTION_DISTANCE 12  // Distância em cm para detectar veículo
 #define DEBOUNCE_DELAY 5000     // Delay entre detecções (ms)
 
 // =================== PINOS DO ESP32-CAM ===================
@@ -272,7 +272,11 @@ void setup() {
     return;
   }
 
+  // Corrigir orientação da imagem alex
   sensor_t * s = esp_camera_sensor_get();
+  if (s != NULL) {
+    s->set_vflip(s, 1);  // Flip vertical (imagem de cabeça para baixo)
+  }
 
   Serial.println("Camera inicializada!");
 

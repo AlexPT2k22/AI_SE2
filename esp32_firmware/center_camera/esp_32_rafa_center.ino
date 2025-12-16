@@ -16,8 +16,8 @@
 #include <esp_http_server.h>
 
 // =================== CONFIGURACOES DE REDE ===================
-const char *ssid = "POCO X3 Pro";
-const char *password = "123456789rafael";
+const char *ssid = "S23 FE de Alexandre";
+const char *password = "alexpt2k20";
 
 // =================== PINOS ESP32-CAM (AI-Thinker) ===================
 #define PWDN_GPIO_NUM     32

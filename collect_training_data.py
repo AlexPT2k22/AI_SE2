@@ -18,48 +18,73 @@ from datetime import datetime
 import time
 
 # ============ CONFIGURAÇÕES ============
-ESP32_URL = "http://10.254.177.15"  # IP da tua ESP32-CAM
-CAPTURE_ENDPOINT = "/capture"
+ESP32_URL = "http://10.114.226.15"  # IP da tua ESP32-CAM
+STREAM_ENDPOINT = "/stream"  # Usar stream em vez de capture
 SPOTS_FILE = "parking_spots.json"
 DATASET_DIR = "dataset_esp32"
 
+# Variável global para a stream
+stream_cap = None
+
 # ============ FUNÇÕES ============
+def init_stream(url):
+    """Inicializa a conexão com o stream MJPEG"""
+    global stream_cap
+    stream_url = f"{url}{STREAM_ENDPOINT}"
+    print(f"   A conectar ao stream: {stream_url}")
+    stream_cap = cv2.VideoCapture(stream_url)
+    if stream_cap.isOpened():
+        print("   ✅ Stream conectado!")
+        return True
+    else:
+        print("   ❌ Falha ao conectar ao stream")
+        return False
+
 def capture_frame(url, retries=3):
-    """Captura um frame da ESP32 com requests (mais robusto)"""
+    """Captura um frame do stream MJPEG"""
+    global stream_cap
+    
+    # Se ainda não iniciou o stream, iniciar
+    if stream_cap is None or not stream_cap.isOpened():
+        if not init_stream(url):
+            return None
+    
     for attempt in range(retries):
         try:
-            capture_url = f"{url}{CAPTURE_ENDPOINT}"
             print(f"   Tentativa {attempt+1}/{retries}...", end=" ", flush=True)
             
-            # Usar requests com stream para melhor handling
-            response = requests.get(capture_url, timeout=30, stream=True)
-            response.raise_for_status()
+            # Ler alguns frames para obter o mais recente
+            for _ in range(3):
+                ret, frame = stream_cap.read()
             
-            # Ler todos os bytes
-            img_data = response.content
-            
-            # Converter para numpy array
-            img_array = np.frombuffer(img_data, dtype=np.uint8)
-            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-            
-            if frame is not None:
+            if ret and frame is not None:
                 print("OK!")
                 return frame
             else:
                 print("Frame inválido")
+                # Tentar reconectar
+                stream_cap.release()
+                init_stream(url)
                 
-        except requests.exceptions.Timeout:
-            print("Timeout")
-        except requests.exceptions.RequestException as e:
-            print(f"Erro: {e}")
         except Exception as e:
             print(f"Erro: {e}")
+            # Tentar reconectar
+            if stream_cap:
+                stream_cap.release()
+            init_stream(url)
         
         if attempt < retries - 1:
             print("   A tentar novamente em 2s...")
             time.sleep(2)
     
     return None
+
+def cleanup_stream():
+    """Liberta recursos do stream"""
+    global stream_cap
+    if stream_cap:
+        stream_cap.release()
+        stream_cap = None
 
 def load_spots():
     """Carrega as vagas do JSON"""
@@ -253,6 +278,7 @@ def main():
             break
     
     cv2.destroyAllWindows()
+    cleanup_stream()
 
 if __name__ == "__main__":
     main()
