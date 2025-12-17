@@ -1,0 +1,348 @@
+================================================================================
+              GUIÃO DE APRESENTAÇÃO - TUGAPARK
+              Cadeira de Sistemas Embebidos / IoT
+================================================================================
+
+
+================================================================================
+PESSOA 1 - JOÃO
+Introdução ao Projeto + Componentes + Demonstração
+Duração: ~4 minutos
+================================================================================
+
+"Olá a todos! Vamos apresentar o TugaPark, um sistema inteligente de gestão 
+de estacionamento.
+
+
+O PROBLEMA
+----------
+Os estacionamentos tradicionais têm gestão ineficiente - carros a circular 
+à procura de vagas, barreiras manuais, e falta de controlo sobre quem entra 
+e sai.
+
+
+A NOSSA SOLUÇÃO
+---------------
+Um sistema IoT (Internet of Things) que:
+- Reconhece automaticamente as matrículas usando ALPR (Automatic License 
+  Plate Recognition)
+- Monitoriza em tempo real os lugares disponíveis com um modelo próprio 
+  de Machine Learning
+- Controla as barreiras de entrada e saída automaticamente
+- Permite reservas e pagamentos através de interfaces web e mobile
+
+
+OS COMPONENTES QUE UTILIZÁMOS
+-----------------------------
++----------------------+------------+----------------------------------+
+| Componente           | Quantidade | Função                           |
++----------------------+------------+----------------------------------+
+| ESP32-CAM            | 3x         | Câmaras com WiFi integrado       |
+| Sensor HC-SR04       | 2x         | Detetar presença de veículos     |
+| Servo Motor SG90     | 2x         | Barreiras de entrada e saída     |
+| LEDs RGB             | 2x         | Feedback visual (verde/vermelho) |
++----------------------+------------+----------------------------------+
+
+O ESP32-CAM foi essencial porque combina num só módulo:
+- Processador dual-core a 240MHz
+- WiFi integrado
+- Câmara OV2640
+- GPIOs para ligar sensores e atuadores
+
+
+ARQUITETURA DO SISTEMA
+----------------------
+(Apontar para a maquete)
+
+Temos 3 nós IoT:
+- ESP32 de Entrada - deteta carros, captura matrícula, controla barreira
+- ESP32 Central - transmite vídeo para monitorizar vagas
+- ESP32 de Saída - valida pagamento antes de deixar sair
+
+Todos comunicam via WiFi com o nosso servidor backend.
+
+
+DEMONSTRAÇÃO RÁPIDA
+-------------------
+(Mostrar brevemente o site web e app mobile)
+
+Desenvolvemos também:
+- Painel de Administração Web - estatísticas, histórico, gestão
+- App Mobile - ver vagas livres, reservar, pagar
+
+Agora os meus colegas vão explicar cada módulo ESP32 em detalhe."
+
+
+================================================================================
+PESSOA 2 - RAFAEL
+Módulo de Entrada no Estacionamento
+Duração: ~4 minutos
+================================================================================
+
+"Eu desenvolvi o módulo de entrada. Vou explicar o que acontece quando um 
+carro chega.
+
+(Apontar para a maquete - zona de entrada)
+
+
+HARDWARE DA ENTRADA
+-------------------
+- ESP32-CAM - a câmara que captura a imagem da matrícula
+- Sensor Ultrassónico HC-SR04 - deteta quando um veículo se aproxima
+- Servo Motor - a barreira física
+- LED RGB - vermelho (fechado) e verde (autorizado a entrar)
+- Flash LED - ilumina a matrícula para melhor captura
+
+
+O FLUXO DE ENTRADA - PASSO A PASSO
+----------------------------------
+
+1. DETEÇÃO DO VEÍCULO
+   O sensor ultrassónico mede continuamente a distância. Quando deteta 
+   algo a menos de 16 cm, sabe que chegou um carro.
+   
+   A física por trás: enviamos um pulso ultrassónico, medimos quanto 
+   tempo demora o eco a voltar, e calculamos a distância usando a 
+   velocidade do som.
+
+2. CAPTURA DA IMAGEM
+   O ESP32 liga o flash LED, espera 1 segundo para iluminar bem a 
+   matrícula, e captura uma foto.
+
+3. ENVIO PARA O SERVIDOR
+   A imagem é enviada via HTTP POST para o endpoint /api/entry do 
+   backend. Incluímos também o identificador da câmara.
+
+4. RECONHECIMENTO ALPR
+   O servidor usa inteligência artificial para ler os caracteres da 
+   matrícula na imagem.
+
+5. VALIDAÇÃO E RESPOSTA
+   - Se a matrícula for reconhecida e o carro AINDA NÃO estiver lá 
+     dentro → LED fica VERDE e BARREIRA ABRE (servo roda para 90°)
+   - Se o carro JÁ estiver lá dentro (duplicado) → LEDs PISCAM e 
+     barreira mantém-se fechada
+   - Se houver erro → LED VERMELHO mantém-se
+
+6. AGUARDA PASSAGEM
+   O sistema confirma que o carro passou - quando o sensor deixa de 
+   detetar durante 2 segundos, consideramos que passou.
+
+7. FECHA A BARREIRA
+   Após 3 segundos extra de segurança, a barreira fecha automaticamente 
+   e o LED volta a vermelho.
+
+
+ASPECTOS TÉCNICOS IMPORTANTES
+-----------------------------
+- Usamos um debounce de 5 segundos entre deteções para evitar capturas 
+  múltiplas do mesmo carro
+- O sistema tem um timeout de 30 segundos - se o carro não passar, 
+  fecha por segurança
+- Uma flag 'systemBusy' impede novos triggers enquanto processa um carro"
+
+
+================================================================================
+PESSOA 3 - ALEX
+Módulo Central - Monitorização das Vagas
+Duração: ~4 minutos
+================================================================================
+
+"Eu fiquei responsável pela câmara central que monitoriza as vagas de 
+estacionamento.
+
+(Apontar para a maquete - câmara central no topo)
+
+
+FUNÇÃO DIFERENTE DAS OUTRAS CÂMARAS
+-----------------------------------
+Este ESP32 não tem sensor ultrassónico nem barreira. A sua função é 
+fornecer um stream de vídeo contínuo para que o servidor saiba quais 
+vagas estão ocupadas.
+
+
+COMO FUNCIONA - STREAM MJPEG
+----------------------------
+O ESP32 transmite um stream MJPEG (Motion JPEG) - são imagens JPEG 
+enviadas continuamente, uma atrás da outra.
+
+O servidor acede ao endereço http://[IP do ESP32]/stream e recebe as 
+imagens em tempo real, a cerca de 30 frames por segundo.
+
+
+O NOSSO MODELO DE MACHINE LEARNING PRÓPRIO
+------------------------------------------
+(Aqui é importante destacar que treinamos o modelo!)
+
+Nós TREINÁMOS UM MODELO CNN (Convolutional Neural Network) especificamente 
+para a nossa maquete:
+
+1. Definimos as coordenadas de cada vaga num ficheiro JSON
+2. Recolhemos imagens de treino - recortes de cada vaga com carros e 
+   sem carros
+3. Treinámos o modelo 'SpotClassifier' com essas imagens
+
+O modelo aprendeu a olhar para um recorte de uma vaga e classificar: 
+'livre' ou 'ocupada'.
+
+Para cada frame do vídeo:
+- O servidor recorta a área de cada vaga definida
+- Passa cada recorte pelo nosso modelo CNN
+- O modelo diz se há carro ou não
+- Atualizamos a base de dados e as interfaces web/mobile
+
+
+PORQUE TREINÁMOS O NOSSO PRÓPRIO MODELO?
+----------------------------------------
+Modelos genéricos não funcionavam bem com os carrinhos em miniatura da 
+nossa maquete. Ao treinar com imagens da NOSSA câmara, da NOSSA 
+iluminação, e dos NOSSOS carros em miniatura, conseguimos uma deteção 
+muito mais precisa.
+
+
+CARACTERÍSTICAS TÉCNICAS DO ESP32 CENTRAL
+-----------------------------------------
+- Stream a ~30 FPS - um frame a cada 33 milissegundos
+- Resolução VGA (640x480)
+- O ESP32 funciona como servidor HTTP - responde a pedidos de browsers 
+  ou do OpenCV
+- Implementei reconexão automática ao WiFi se a ligação cair"
+
+
+================================================================================
+PESSOA 4 - JOEL
+Módulo de Saída - Validação de Pagamento
+Duração: ~4 minutos
+================================================================================
+
+"Eu desenvolvi o módulo de saída. É semelhante ao de entrada, mas com 
+uma diferença importante - valida se o condutor PAGOU antes de abrir 
+a barreira.
+
+(Apontar para a maquete - zona de saída)
+
+
+HARDWARE DA SAÍDA
+-----------------
+Os mesmos componentes da entrada:
+- ESP32-CAM para capturar a matrícula
+- Sensor Ultrassónico para detetar o veículo
+- Servo Motor para a barreira
+- LED RGB para feedback visual
+
+
+O FLUXO DE SAÍDA - VALIDAÇÃO DE PAGAMENTO
+-----------------------------------------
+
+1. Sensor deteta veículo a menos de 12 cm da barreira
+
+2. Captura foto e envia para /api/exit (endpoint diferente da entrada)
+
+3. Backend verifica:
+   - Esta matrícula está registada como estando lá dentro?
+   - O utilizador JÁ PAGOU o estacionamento?
+   - O pagamento ainda está VÁLIDO? (não passou mais de 10 minutos 
+     desde que pagou)
+
+4. Resultado:
+   +-----------------------------+------------------+----------+
+   | Situação                    | LED              | Barreira |
+   +-----------------------------+------------------+----------+
+   | Pagamento confirmado        | Verde            | Abre     |
+   | Não pagou                   | Vermelho+3piscas | Fechada  |
+   | Pagamento expirado (+10min) | Vermelho+5piscas | Fechada  |
+   +-----------------------------+------------------+----------+
+
+   O número de piscas indica ao condutor qual é o problema!
+
+5. Se autorizado - aguarda o carro passar (confirmação de 2 segundos 
+   sem deteção), depois fecha a barreira
+
+
+A GRANDE DIFERENÇA ENTRE ENTRADA E SAÍDA
+----------------------------------------
+- Na ENTRADA: verificamos se o carro PODE ENTRAR (não está lá dentro, 
+  tem reserva válida, etc.)
+- Na SAÍDA: verificamos se o carro PODE SAIR (já pagou e o pagamento 
+  ainda é válido)
+
+
+ASPECTOS TÉCNICOS
+-----------------
+- O ESP32 analisa a resposta HTTP para perceber o tipo de erro
+- Procura palavras como 'pagamento', 'expirado' na mensagem de erro
+- Timeouts de segurança: 10 segundos para resposta HTTP, 30 segundos 
+  para passagem do veículo"
+
+
+================================================================================
+TODOS - IMPLEMENTAÇÃO NO MERCADO REAL
+2 Frases Cada Um
+================================================================================
+
+JOÃO:
+"Num cenário real, usaríamos câmaras IP industriais com proteção contra 
+intempéries e iluminação infravermelha para funcionar de noite. A 
+comunicação seria via MQTT em vez de HTTP - é mais leve e permite que 
+o servidor envie comandos aos ESP32 sem eles terem de perguntar 
+constantemente."
+
+
+RAFAEL:
+"Na entrada, o sensor ultrassónico seria substituído por sensores de loop 
+indutivo embutidos no chão, como os usados nos semáforos - são mais 
+fiáveis e não falham com chuva ou sujidade. Também teríamos múltiplas 
+câmaras de ângulos diferentes para ler matrículas mesmo que estejam sujas 
+ou danificadas."
+
+
+ALEX:
+"Para a monitorização de vagas, poderíamos ter sensores individuais por 
+lugar - loops indutivos no chão ou sensores ultrassónicos no teto de cada 
+vaga. Isto eliminaria a dependência de iluminação. Alternativamente, 
+câmaras de maior resolução com processamento no edge diretamente no 
+microcontrolador."
+
+
+JOEL:
+"Na saída, além das barreiras motorizadas industriais, teríamos espigões 
+anti-retorno para impedir que carros entrem pela saída. Integraríamos 
+também com sistemas de pagamento automático como Via Verde ou contactless, 
+para o condutor nem precisar de sair do carro. E implementaríamos 
+armazenamento local como fallback quando a internet falhar."
+
+
+================================================================================
+RESUMO VISUAL (PARA SLIDE FINAL)
+================================================================================
+
+DIVISÃO DE TRABALHO
+-------------------
++------------+-------------+------------------------------------------------+
+| Módulo     | Responsável | Função Principal                               |
++------------+-------------+------------------------------------------------+
+| Entrada    | Rafael      | Detetar + Capturar matrícula + Abrir barreira  |
+| Centro     | Alex        | Stream vídeo + CNN para detetar vagas          |
+| Saída      | Joel        | Validar pagamento + Abrir barreira             |
+| Arquitetura| João        | Integração geral + Web/Mobile                  |
++------------+-------------+------------------------------------------------+
+
+
+STACK TECNOLÓGICA
+-----------------
++-------------------+-------------------------------------------+
+| Área              | Tecnologia                                |
++-------------------+-------------------------------------------+
+| Microcontrolador  | ESP32-CAM (Xtensa 240MHz, WiFi)           |
+| Sensores          | HC-SR04 (Ultrassónico)                    |
+| Atuadores         | Servo SG90 (PWM)                          |
+| Comunicação       | HTTP REST sobre WiFi                      |
+| ML Vagas          | CNN própria (SpotClassifier) treinada     |
+| Backend           | Python FastAPI                            |
+| Base de Dados     | Supabase (PostgreSQL)                     |
++-------------------+-------------------------------------------+
+
+
+================================================================================
+FIM DO GUIÃO
+================================================================================
