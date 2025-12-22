@@ -14,33 +14,33 @@ CAPTURE_URL = f"{ESP32_BASE}/capture"
 print(f"A tentar conectar à ESP32-CAM: {CAPTURE_URL}")
 
 try:
-    # Usar requests para capturar imagem via /capture (mais fiável)
-    response = requests.get(CAPTURE_URL, timeout=30)
-    response.raise_for_status()
-    
-    # Converter para imagem OpenCV
-    img_array = np.frombuffer(response.content, dtype=np.uint8)
-    frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    
-    if frame is None:
-        print("Erro: Imagem recebida mas nao consegui descodificar!")
-        sys.exit(1)
-    
-    output_file = "esp32_reference_frame.jpg"
-    cv2.imwrite(output_file, frame)
-    print(f"Frame capturado e guardado em: {output_file}")
-    print(f"  Tamanho: {frame.shape[1]}x{frame.shape[0]} pixels")
-    print()
-    print("Proximo passo:")
-    print(f"  python mark_parking_spots.py --source {output_file} --output parking_spots.json")
+ # Usar requests para capturar imagem via /capture (mais fiável)
+ response = requests.get(CAPTURE_URL, timeout=30)
+ response.raise_for_status()
+ 
+ # Converter para imagem OpenCV
+ img_array = np.frombuffer(response.content, dtype=np.uint8)
+ frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+ 
+ if frame is None:
+ print("Erro: Imagem recebida mas nao consegui descodificar!")
+ sys.exit(1)
+ 
+ output_file = "esp32_reference_frame.jpg"
+ cv2.imwrite(output_file, frame)
+ print(f"Frame capturado e guardado em: {output_file}")
+ print(f" Tamanho: {frame.shape[1]}x{frame.shape[0]} pixels")
+ print()
+ print("Proximo passo:")
+ print(f" python mark_parking_spots.py --source {output_file} --output parking_spots.json")
 
 except requests.exceptions.Timeout:
-    print("Erro: Timeout ao conectar a ESP32-CAM!")
-    print("Verifica se:")
-    print("  1. A ESP32-CAM esta ligada")
-    print("  2. O IP esta correto (10.254.177.15)")
-    sys.exit(1)
+ print("Erro: Timeout ao conectar a ESP32-CAM!")
+ print("Verifica se:")
+ print(" 1. A ESP32-CAM esta ligada")
+ print(" 2. O IP esta correto (10.254.177.15)")
+ sys.exit(1)
 except requests.exceptions.RequestException as e:
-    print(f"Erro: {e}")
-    print("Verifica se consegues abrir http://10.254.177.15 no browser")
-    sys.exit(1)
+ print(f"Erro: {e}")
+ print("Verifica se consegues abrir http://10.254.177.15 no browser")
+ sys.exit(1)

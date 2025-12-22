@@ -8,15 +8,15 @@ const TOKEN_KEY = 'tugapark_token';
 
 // Funções para gerir o token JWT
 export function setAuthToken(token) {
-    localStorage.setItem(TOKEN_KEY, token);
+ localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function getAuthToken() {
-    return localStorage.getItem(TOKEN_KEY);
+ return localStorage.getItem(TOKEN_KEY);
 }
 
 export function clearAuthToken() {
-    localStorage.removeItem(TOKEN_KEY);
+ localStorage.removeItem(TOKEN_KEY);
 }
 
 /**
@@ -25,44 +25,44 @@ export function clearAuthToken() {
  * @param {object} options - Opções (method, body, headers)
  */
 export async function api(path, options = {}) {
-    try {
-        const method = (options.method || 'GET').toLowerCase();
-        const url = `${API_BASE}${path}`;
+ try {
+ const method = (options.method || 'GET').toLowerCase();
+ const url = `${API_BASE}${path}`;
 
-        // Headers base
-        const headers = {
-            'Content-Type': 'application/json',
-            ...(options.headers || {})
-        };
+ // Headers base
+ const headers = {
+ 'Content-Type': 'application/json',
+ ...(options.headers || {})
+ };
 
-        // Adicionar token JWT se existir
-        const token = getAuthToken();
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
+ // Adicionar token JWT se existir
+ const token = getAuthToken();
+ if (token) {
+ headers['Authorization'] = `Bearer ${token}`;
+ }
 
-        // Parse body se necessário
-        const data = options.body ? JSON.parse(options.body) : undefined;
+ // Parse body se necessário
+ const data = options.body ? JSON.parse(options.body) : undefined;
 
-        // Fazer request
-        const res = await axios({
-            url,
-            method,
-            headers,
-            data,
-            withCredentials: true
-        });
+ // Fazer request
+ const res = await axios({
+ url,
+ method,
+ headers,
+ data,
+ withCredentials: true
+ });
 
-        return res.data;
-    } catch (e) {
-        // Se for 401, limpar token
-        if (e?.response?.status === 401) {
-            clearAuthToken();
-        }
+ return res.data;
+ } catch (e) {
+ // Se for 401, limpar token
+ if (e?.response?.status === 401) {
+ clearAuthToken();
+ }
 
-        const msg = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Erro';
-        throw new Error(msg);
-    }
+ const msg = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Erro';
+ throw new Error(msg);
+ }
 }
 
 // Funções de conveniência para operações comuns
