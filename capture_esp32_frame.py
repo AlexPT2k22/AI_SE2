@@ -8,7 +8,7 @@ import numpy as np
 import requests
 
 # URL da ESP32-CAM (camara central do estacionamento)
-ESP32_BASE = "10.114.226.15"
+ESP32_BASE = "http://10.254.177.15"
 CAPTURE_URL = f"{ESP32_BASE}/capture"
 
 print(f"A tentar conectar à ESP32-CAM: {CAPTURE_URL}")

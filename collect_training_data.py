@@ -18,7 +18,7 @@ from datetime import datetime
 import time
 
 # ============ CONFIGURAÇÕES ============
-ESP32_URL = "http://10.114.226.15"  # IP da tua ESP32-CAM
+ESP32_URL = "http://10.254.177.15"  # IP da tua ESP32-CAM
 STREAM_ENDPOINT = "/stream"  # Usar stream em vez de capture
 SPOTS_FILE = "parking_spots.json"
 DATASET_DIR = "dataset_esp32"

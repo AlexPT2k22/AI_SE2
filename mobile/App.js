@@ -1,11 +1,11 @@
 // TugaPark Mobile App - Simplified Main Entry
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
   SafeAreaView,
   ActivityIndicator,
   ScrollView,
@@ -107,8 +107,7 @@ const MoonIcon = ({ size = 24, color = '#666666' }) => (
 );
 
 // API Configuration
-//const API_BASE_URL = 'http://10.0.2.2:8000'; // Android emulator
-const API_BASE_URL = 'http://192.168.243.164:8000'; // Replace with your IP for physical device
+const API_BASE_URL = 'http://10.254.177.133:8000'; // Android emulator 10.254.177.133
 
 // WebSocket URL (derived from API URL)
 const WS_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws';
@@ -294,10 +293,10 @@ const SplashScreen = ({ onFinish, theme }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const logoFade = useRef(new Animated.Value(0)).current;
-  
+
   // Cores do gradiente baseadas no tema
   const isDark = theme === darkColors;
-  const gradientColors = isDark 
+  const gradientColors = isDark
     ? ['#1e1e1e', '#2d2d2d', '#1e1e1e']  // Dark mode
     : ['#f5f5f5', '#ffffff', '#f5f5f5'];  // Light mode
 
@@ -378,12 +377,12 @@ const LoginScreen = ({ onLogin, theme }) => {
 
   const handleSubmit = async () => {
     triggerHaptic('medium');
-    
+
     if (!email.trim() || !password.trim()) {
       setError('Preencha email e password');
       return;
     }
-    
+
     if (isRegister && !name.trim()) {
       setError('Preencha o nome');
       return;
@@ -425,11 +424,11 @@ const LoginScreen = ({ onLogin, theme }) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar style={theme === darkColors ? 'light' : 'dark'} />
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
@@ -440,7 +439,7 @@ const LoginScreen = ({ onLogin, theme }) => {
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardTitle, { color: theme.text }]}>{isRegister ? 'Criar Conta' : 'Entrar'}</Text>
-            
+
             {isRegister && (
               <>
                 <Text style={[styles.label, { color: theme.textSecondary }]}>Nome completo</Text>
@@ -506,7 +505,7 @@ const LoginScreen = ({ onLogin, theme }) => {
                 {isRegister ? 'Já tem conta? Entrar' : 'Não tem conta? Registar'}
               </Text>
             </TouchableOpacity>
-            
+
             {isRegister && (
               <Text style={[{ color: theme.textMuted, fontSize: 12, textAlign: 'center', marginTop: 12 }]}>
                 Após criar conta, adicione os seus veículos nas Definições
@@ -556,7 +555,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [vehicleForm, setVehicleForm] = useState({ plate: '', brand: '', model: '', color: '' });
   const [vehicleLoading, setVehicleLoading] = useState(false);
-  
+
   // Payment methods state
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [showCardForm, setShowCardForm] = useState(false);
@@ -568,15 +567,15 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
     expiry_year: '',
   });
   const [cardLoading, setCardLoading] = useState(false);
-  
+
   // Loading state
   const [loading, setLoading] = useState(true);
-  
+
   // Load data on mount
   useEffect(() => {
     loadUserData();
   }, []);
-  
+
   const loadUserData = async () => {
     setLoading(true);
     try {
@@ -592,14 +591,14 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
       setLoading(false);
     }
   };
-  
+
   // Add vehicle
   const addVehicle = async () => {
     if (!vehicleForm.plate.trim()) {
       showToast('error', 'Erro', 'Indique a matrícula');
       return;
     }
-    
+
     setVehicleLoading(true);
     try {
       await api.post('/api/user/vehicles', vehicleForm);
@@ -614,7 +613,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
       setVehicleLoading(false);
     }
   };
-  
+
   // Remove vehicle
   const removeVehicle = async (id, plate) => {
     try {
@@ -626,7 +625,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
       showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao remover veículo');
     }
   };
-  
+
   // Set vehicle as primary
   const setPrimaryVehicle = async (plate) => {
     try {
@@ -638,14 +637,14 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
       showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao definir veículo principal');
     }
   };
-  
+
   // Add payment card
   const addCard = async () => {
     if (!cardForm.card_number.trim() || !cardForm.card_holder_name.trim()) {
       showToast('error', 'Erro', 'Preencha todos os campos obrigatórios');
       return;
     }
-    
+
     setCardLoading(true);
     try {
       await api.post('/api/user/payment-methods', {
@@ -671,7 +670,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
       setCardLoading(false);
     }
   };
-  
+
   // Remove payment card
   const removeCard = async (id) => {
     try {
@@ -702,7 +701,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
           <Text style={[styles.settingsValue, { color: theme.text }]}>€{parkingRate.toFixed(2)}/hora</Text>
         </View>
       </View>
-      
+
       {/* Vehicles Section */}
       <View style={styles.section}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -720,7 +719,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
             </Text>
           </TouchableOpacity>
         </View>
-        
+
         {/* Add Vehicle Form */}
         {showVehicleForm && (
           <View style={[styles.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -779,7 +778,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
             </View>
           </View>
         )}
-        
+
         {/* Vehicles List */}
         {loading ? (
           <SkeletonCard />
@@ -794,10 +793,10 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
           vehicles.map((v) => (
             <View key={v.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: v.is_primary ? theme.primary : theme.border, borderWidth: v.is_primary ? 2 : 1 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <View style={{ 
-                  width: 40, 
-                  height: 40, 
-                  borderRadius: 20, 
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
                   backgroundColor: v.is_primary ? theme.primary + '20' : theme.background,
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -850,7 +849,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
           ))
         )}
       </View>
-      
+
       {/* Payment Methods Section */}
       <View style={styles.section}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -870,7 +869,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
             </TouchableOpacity>
           )}
         </View>
-        
+
         {/* Add Card Form */}
         {showCardForm && (
           <View style={[styles.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -954,7 +953,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
             </View>
           </View>
         )}
-        
+
         {/* Cards List */}
         {loading ? (
           <SkeletonCard />
@@ -995,11 +994,11 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
           ))
         )}
       </View>
-      
+
       {/* Settings */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Definições</Text>
-        
+
         {/* Dark Mode Toggle */}
         <View style={[styles.settingsCard, styles.settingsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.settingsRowLeft}>
@@ -1021,7 +1020,7 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
             thumbColor={isDarkMode ? theme.secondary : '#f4f3f4'}
           />
         </View>
-        
+
         {/* Logout Button */}
         <TouchableOpacity
           style={[styles.logoutButton, { backgroundColor: theme.danger }]}
@@ -1046,26 +1045,26 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
-  
+
   // User setup state (vehicles and cards)
   const [userVehicles, setUserVehicles] = useState([]);
   const [userCards, setUserCards] = useState([]);
-  
+
   // Reservation modal state
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedSpot, setSelectedSpot] = useState(null);
   const [reserveForToday, setReserveForToday] = useState(true); // true = today, false = tomorrow
   const [selectedVehicleForReservation, setSelectedVehicleForReservation] = useState(null);
-  
+
   // Confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmSpot, setConfirmSpot] = useState(null);
   const [spotReservationStatus, setSpotReservationStatus] = useState({}); // { today_reserved: bool, tomorrow_reserved: bool }
-  
+
   // Animation for reservation modal slide up
   const reserveModalSlideAnim = useRef(new Animated.Value(300)).current;
-  
+
   // Trigger slide animation when modal visibility changes
   useEffect(() => {
     if (showReserveModal) {
@@ -1080,10 +1079,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
       reserveModalSlideAnim.setValue(300);
     }
   }, [showReserveModal]);
-  
+
   // Timer state for active sessions
   const [currentTime, setCurrentTime] = useState(Date.now());
-  
+
   // Update timer every second
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1091,7 +1090,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  
+
   // Calculate elapsed time for a session
   const getElapsedTime = (entryTime) => {
     const entry = new Date(entryTime).getTime();
@@ -1104,18 +1103,18 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     }
     return `${minutes}m ${seconds}s`;
   };
-  
+
   // Calculate current cost using rate from backend
   const getCurrentCost = (entryTime) => {
     const entry = new Date(entryTime).getTime();
     const elapsed = (currentTime - entry) / 1000 / 60 / 60; // hours
     return (elapsed * parkingRate).toFixed(2);
   };
-  
+
   // Get alerts for reservations and payment deadlines
   const getAlerts = () => {
     const alerts = [];
-    
+
     // Show reminder for today's reservations
     const todayReservations = reservations.filter(res => {
       const today = new Date().toISOString().split('T')[0];
@@ -1129,7 +1128,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         message: `${todayReservations.length} reserva(s) ativa(s). Multa de 20€ se não usar!`,
       });
     }
-    
+
     // Check payment deadlines
     sessions.forEach(session => {
       if (session.payment_deadline) {
@@ -1145,7 +1144,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         }
       }
     });
-    
+
     // Check pending payments
     const pendingPayments = sessions.filter(s => s.status === 'open' && s.amount_due > 0);
     if (pendingPayments.length > 0) {
@@ -1156,17 +1155,17 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         message: `${pendingPayments.length} sessão(ões) a aguardar pagamento`,
       });
     }
-    
+
     return alerts;
   };
-  
+
   const alerts = getAlerts();
-  
+
   // Check if user has completed onboarding (has vehicles and cards)
   const hasCompletedSetup = userVehicles.length > 0 && userCards.length > 0;
   const needsVehicle = userVehicles.length === 0;
   const needsCard = userVehicles.length > 0 && userCards.length === 0;
-  
+
   // Day-based reservation - no duration options needed
 
   const loadData = async () => {
@@ -1202,19 +1201,19 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   // WebSocket connection for real-time spot updates
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
-  
+
   const connectWebSocket = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    
+
     try {
       console.log('[WS] Connecting to', WS_URL);
       wsRef.current = new WebSocket(WS_URL);
-      
+
       wsRef.current.onopen = () => {
         console.log('[WS] Connected');
         showToast('success', 'Conectado', 'Atualizações em tempo real ativas');
       };
-      
+
       wsRef.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -1224,13 +1223,13 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
           console.log('[WS] Parse error:', e.message);
         }
       };
-      
+
       wsRef.current.onclose = () => {
         console.log('[WS] Disconnected, reconnecting in 5s...');
         // Reconnect after 5 seconds
         reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
       };
-      
+
       wsRef.current.onerror = (error) => {
         console.log('[WS] Error:', error.message);
       };
@@ -1242,10 +1241,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   useEffect(() => {
     // Initial data load
     loadData();
-    
+
     // Connect WebSocket for real-time spot updates
     connectWebSocket();
-    
+
     // Fallback: refresh sessions/reservations every 60 seconds (spots come via WS)
     const interval = setInterval(async () => {
       try {
@@ -1259,7 +1258,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         console.log('Refresh error:', e.message);
       }
     }, 60000);
-    
+
     return () => {
       clearInterval(interval);
       if (reconnectTimeoutRef.current) {
@@ -1274,22 +1273,22 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   const openReserveModal = async (spotName) => {
     setSelectedSpot(spotName);
     setReserveForToday(true);
-    
+
     // Auto-select primary vehicle or first vehicle if only one
     const primaryVehicle = userVehicles.find(v => v.is_primary);
     setSelectedVehicleForReservation(primaryVehicle?.plate || userVehicles[0]?.plate || null);
-    
+
     // Check if this spot already has reservations for today/tomorrow (from any user)
     try {
-      const res = await api.get('/api/reservations/check', { 
-        params: { spot: spotName } 
+      const res = await api.get('/api/reservations/check', {
+        params: { spot: spotName }
       });
       setSpotReservationStatus(res.data || {});
     } catch (e) {
       console.log('Could not check spot reservation status:', e.message);
       setSpotReservationStatus({});
     }
-    
+
     setShowReserveModal(true);
   };
 
@@ -1300,8 +1299,8 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
       return;
     }
     try {
-      await api.post('/api/mobile/reservations', { 
-        spot: selectedSpot, 
+      await api.post('/api/mobile/reservations', {
+        spot: selectedSpot,
         reservation_date: reserveForToday ? 'today' : 'tomorrow',
         plate: selectedVehicleForReservation
       });
@@ -1319,7 +1318,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     setConfirmAction('cancel');
     setShowConfirmModal(true);
   };
-  
+
   const executeCancelReservation = async () => {
     if (!confirmSpot) return;
     try {
@@ -1390,7 +1389,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar style={isDarkMode ? 'light' : 'dark'} />
-      
+
       {/* Header */}
       <View style={[styles.homeHeader, { backgroundColor: theme.surface }]}>
         <View>
@@ -1416,7 +1415,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         ))}
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         refreshControl={
           <RefreshControl
@@ -1492,7 +1491,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 </View>
               </View>
             )}
-            
+
             {/* Only show parking info if setup is complete */}
             {hasCompletedSetup && (
               <>
@@ -1520,140 +1519,140 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                     ))}
                   </View>
                 )}
-            
-            {/* Active Session Timer */}
-            {sessions.filter(s => s.status === 'open').length > 0 && (
-              <View style={styles.activeSessionSection}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessão Ativa</Text>
-                {sessions.filter(s => s.status === 'open').slice(0, 1).map((session, i) => (
-                  <View key={i} style={[styles.timerCard, { backgroundColor: theme.primary }]}>
-                    <View style={styles.timerHeader}>
-                      <Text style={[styles.timerSpot, { color: theme.secondary }]}>
-                        {session.spot ? `Vaga ${session.spot}` : 'Estacionado'}
-                      </Text>
-                      <View style={[styles.timerBadge, { backgroundColor: theme.secondary }]}>
-                        <Text style={[styles.timerBadgeText, { color: theme.primary }]}>EM CURSO</Text>
-                      </View>
-                    </View>
-                    <View style={styles.timerDisplay}>
-                      <Text style={[styles.timerTime, { color: theme.secondary }]}>
-                        {getElapsedTime(session.entry_time)}
-                      </Text>
-                      <Text style={[styles.timerCost, { color: theme.secondary }]}>
-                        €{getCurrentCost(session.entry_time)}
-                      </Text>
-                    </View>
-                    <Text style={[styles.timerEntry, { color: theme.secondary }]}>
-                      Entrada: {new Date(session.entry_time).toLocaleTimeString('pt-PT')}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            
-            {/* Pending Sessions */}
-            {sessions.filter(s => s.status === 'open').length > 0 && (
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessões a Pagar</Text>
-                {sessions.filter(s => s.status === 'open').map((session, i) => (
-                  <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <Text style={[styles.cardTitle, { color: theme.text }]}>
-                      {session.spot ? `Vaga ${session.spot}` : 'Em curso'}
-                    </Text>
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>€{getCurrentCost(session.entry_time)}</Text>
-                    <TouchableOpacity
-                      style={[styles.smallButton, { backgroundColor: theme.primary }]}
-                      onPress={() => {
-                        triggerHaptic('medium');
-                        handlePay(session.id, parseFloat(getCurrentCost(session.entry_time)));
-                      }}
-                    >
-                      <Text style={[styles.buttonText, { color: theme.secondary }]}>Pagar</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-            
-            {/* Stats */}
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Estacionamentos</Text>
-              <View style={styles.statsRow}>
-                <View style={[styles.statCardFree, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
-                  <Text style={[styles.statNumber, { color: theme.text }]}>{freeSpots.length}</Text>
-                  <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Livres</Text>
-                </View>
-                <View style={[styles.statCardOccupied, { backgroundColor: theme.surface, borderColor: theme.danger }]}>
-                  <Text style={[styles.statNumber, { color: theme.text }]}>{occupiedSpots.length}</Text>
-                  <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Ocupados</Text>
-                </View>
-              </View>
-            </View>
-            
 
-            {/* Reservations */}
-            {reservations.length > 0 && (
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Minhas Reservas</Text>
-                {reservations.map((res, i) => (
-                  <View key={i} style={[styles.reservationCard, { backgroundColor: theme.surface, borderColor: theme.warning }]}>
-                    <View>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>Vaga {res.spot}</Text>
-                      <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                        Para: {res.reservation_date || 'Hoje'}
-                      </Text>
-                      <Text style={[{ color: theme.warning, fontSize: 11, marginTop: 2 }]}>
-                        Multa de 20€ se não usar
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.cancelButton, { backgroundColor: theme.danger }]}
-                      onPress={() => {
-                        triggerHaptic('medium');
-                        handleCancelReservation(res.spot);
-                      }}
-                    >
-                      <Text style={[styles.cancelButtonText, { color: theme.textInverse }]}>Cancelar</Text>
-                    </TouchableOpacity>
+                {/* Active Session Timer */}
+                {sessions.filter(s => s.status === 'open').length > 0 && (
+                  <View style={styles.activeSessionSection}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessão Ativa</Text>
+                    {sessions.filter(s => s.status === 'open').slice(0, 1).map((session, i) => (
+                      <View key={i} style={[styles.timerCard, { backgroundColor: theme.primary }]}>
+                        <View style={styles.timerHeader}>
+                          <Text style={[styles.timerSpot, { color: theme.secondary }]}>
+                            {session.spot ? `Vaga ${session.spot}` : 'Estacionado'}
+                          </Text>
+                          <View style={[styles.timerBadge, { backgroundColor: theme.secondary }]}>
+                            <Text style={[styles.timerBadgeText, { color: theme.primary }]}>EM CURSO</Text>
+                          </View>
+                        </View>
+                        <View style={styles.timerDisplay}>
+                          <Text style={[styles.timerTime, { color: theme.secondary }]}>
+                            {getElapsedTime(session.entry_time)}
+                          </Text>
+                          <Text style={[styles.timerCost, { color: theme.secondary }]}>
+                            €{getCurrentCost(session.entry_time)}
+                          </Text>
+                        </View>
+                        <Text style={[styles.timerEntry, { color: theme.secondary }]}>
+                          Entrada: {new Date(session.entry_time).toLocaleTimeString('pt-PT')}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            )}
-            
-            {/* Session History */}
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Histórico</Text>
-              {sessions.filter(s => s.status !== 'open').length === 0 ? (
-                <EmptyState 
-                  icon={HistoryIcon}
-                  title="Sem histórico"
-                  subtitle="As suas sessões anteriores aparecerão aqui"
-                  theme={theme}
-                />
-              ) : (
-                sessions.filter(s => s.status !== 'open').slice(0, 5).map((session, i) => (
-                  <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <View style={styles.sessionHeader}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>
-                        {session.spot ? `Vaga ${session.spot}` : 'Sessão'}
-                      </Text>
-                      <Text style={[
-                        styles.sessionStatus,
-                        { color: session.status === 'paid' ? theme.success : theme.warning }
-                      ]}>
-                        {session.status === 'paid' ? 'Pago' : 'Terminada'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                      {new Date(session.entry_time).toLocaleString('pt-PT')}
-                    </Text>
-                    {session.amount_paid > 0 && (
-                      <Text style={[styles.amount, { color: theme.primary }]}>€{session.amount_paid.toFixed(2)}</Text>
-                    )}
+                )}
+
+                {/* Pending Sessions */}
+                {sessions.filter(s => s.status === 'open').length > 0 && (
+                  <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessões a Pagar</Text>
+                    {sessions.filter(s => s.status === 'open').map((session, i) => (
+                      <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <Text style={[styles.cardTitle, { color: theme.text }]}>
+                          {session.spot ? `Vaga ${session.spot}` : 'Em curso'}
+                        </Text>
+                        <Text style={[styles.cardText, { color: theme.textSecondary }]}>€{getCurrentCost(session.entry_time)}</Text>
+                        <TouchableOpacity
+                          style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                          onPress={() => {
+                            triggerHaptic('medium');
+                            handlePay(session.id, parseFloat(getCurrentCost(session.entry_time)));
+                          }}
+                        >
+                          <Text style={[styles.buttonText, { color: theme.secondary }]}>Pagar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
                   </View>
-                ))
-              )}
-            </View>
+                )}
+
+                {/* Stats */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Estacionamentos</Text>
+                  <View style={styles.statsRow}>
+                    <View style={[styles.statCardFree, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
+                      <Text style={[styles.statNumber, { color: theme.text }]}>{freeSpots.length}</Text>
+                      <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Livres</Text>
+                    </View>
+                    <View style={[styles.statCardOccupied, { backgroundColor: theme.surface, borderColor: theme.danger }]}>
+                      <Text style={[styles.statNumber, { color: theme.text }]}>{occupiedSpots.length}</Text>
+                      <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Ocupados</Text>
+                    </View>
+                  </View>
+                </View>
+
+
+                {/* Reservations */}
+                {reservations.length > 0 && (
+                  <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Minhas Reservas</Text>
+                    {reservations.map((res, i) => (
+                      <View key={i} style={[styles.reservationCard, { backgroundColor: theme.surface, borderColor: theme.warning }]}>
+                        <View>
+                          <Text style={[styles.cardTitle, { color: theme.text }]}>Vaga {res.spot}</Text>
+                          <Text style={[styles.cardText, { color: theme.textSecondary }]}>
+                            Para: {res.reservation_date || 'Hoje'}
+                          </Text>
+                          <Text style={[{ color: theme.warning, fontSize: 11, marginTop: 2 }]}>
+                            Multa de 20€ se não usar
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.cancelButton, { backgroundColor: theme.danger }]}
+                          onPress={() => {
+                            triggerHaptic('medium');
+                            handleCancelReservation(res.spot);
+                          }}
+                        >
+                          <Text style={[styles.cancelButtonText, { color: theme.textInverse }]}>Cancelar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Session History */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Histórico</Text>
+                  {sessions.filter(s => s.status !== 'open').length === 0 ? (
+                    <EmptyState
+                      icon={HistoryIcon}
+                      title="Sem histórico"
+                      subtitle="As suas sessões anteriores aparecerão aqui"
+                      theme={theme}
+                    />
+                  ) : (
+                    sessions.filter(s => s.status !== 'open').slice(0, 5).map((session, i) => (
+                      <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <View style={styles.sessionHeader}>
+                          <Text style={[styles.cardTitle, { color: theme.text }]}>
+                            {session.spot ? `Vaga ${session.spot}` : 'Sessão'}
+                          </Text>
+                          <Text style={[
+                            styles.sessionStatus,
+                            { color: session.status === 'paid' ? theme.success : theme.warning }
+                          ]}>
+                            {session.status === 'paid' ? 'Pago' : 'Terminada'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.cardText, { color: theme.textSecondary }]}>
+                          {new Date(session.entry_time).toLocaleString('pt-PT')}
+                        </Text>
+                        {session.amount_paid > 0 && (
+                          <Text style={[styles.amount, { color: theme.primary }]}>€{session.amount_paid.toFixed(2)}</Text>
+                        )}
+                      </View>
+                    ))
+                  )}
+                </View>
               </>
             )}
           </>
@@ -1663,7 +1662,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Vagas Disponíveis</Text>
             {spotsList.length === 0 ? (
-              <EmptyState 
+              <EmptyState
                 icon={ParkingIcon}
                 title="Sem vagas"
                 subtitle="Nenhuma vaga disponível no momento"
@@ -1699,7 +1698,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         )}
 
         {activeTab === 'settings' && (
-          <SettingsTab 
+          <SettingsTab
             user={user}
             theme={theme}
             isDarkMode={isDarkMode}
@@ -1719,30 +1718,30 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         onRequestClose={() => setShowReserveModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <Animated.View 
+          <Animated.View
             style={[
-              styles.modalContent, 
-              { 
+              styles.modalContent,
+              {
                 backgroundColor: theme.surface,
                 transform: [{ translateY: reserveModalSlideAnim }],
               }
             ]}
           >
             <Text style={[styles.modalTitle, { color: theme.text }]}>Reservar {selectedSpot}</Text>
-            
+
             {/* Vehicle Selector - scrollable list for scalability */}
             {userVehicles.length > 0 && (
               <>
                 <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: 8 }]}>
                   {userVehicles.length > 1 ? 'Selecione o veículo' : 'Veículo'}
                 </Text>
-                <View style={{ 
-                  maxHeight: userVehicles.length > 3 ? 150 : undefined, 
+                <View style={{
+                  maxHeight: userVehicles.length > 3 ? 150 : undefined,
                   marginBottom: 12,
                   borderRadius: 12,
                   overflow: 'hidden',
                 }}>
-                  <ScrollView 
+                  <ScrollView
                     nestedScrollEnabled={true}
                     showsVerticalScrollIndicator={userVehicles.length > 3}
                   >
@@ -1771,10 +1770,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                         >
                           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                             {/* Car icon */}
-                            <View style={{ 
-                              width: 36, 
-                              height: 36, 
-                              borderRadius: 18, 
+                            <View style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 18,
                               backgroundColor: isSelected ? theme.secondary + '20' : theme.surface,
                               alignItems: 'center',
                               justifyContent: 'center',
@@ -1785,8 +1784,8 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                             <View style={{ flex: 1 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                 <Text style={[
-                                  { 
-                                    fontSize: 15, 
+                                  {
+                                    fontSize: 15,
                                     fontWeight: '600',
                                     color: isSelected ? theme.secondary : theme.text,
                                   }
@@ -1801,8 +1800,8 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                                     borderRadius: 4,
                                     marginLeft: 8,
                                   }}>
-                                    <Text style={{ 
-                                      fontSize: 9, 
+                                    <Text style={{
+                                      fontSize: 9,
                                       fontWeight: '600',
                                       color: isSelected ? theme.primary : theme.secondary,
                                     }}>
@@ -1812,8 +1811,8 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                                 )}
                               </View>
                               {vehicle.created_at && (
-                                <Text style={{ 
-                                  fontSize: 11, 
+                                <Text style={{
+                                  fontSize: 11,
                                   color: isSelected ? theme.secondary + '80' : theme.textSecondary,
                                   marginTop: 2,
                                 }}>
@@ -1842,9 +1841,9 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 </View>
               </>
             )}
-            
+
             <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginTop: 4 }]}>Selecione o dia</Text>
-            
+
             <View style={styles.durationGrid}>
               <TouchableOpacity
                 style={[
@@ -1899,11 +1898,11 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 </Text>
               </TouchableOpacity>
             </View>
-            
+
             <Text style={[styles.modalSubtitle, { color: theme.warning, marginTop: 12, fontSize: 13 }]}>
               ⚠️ Multa de 20€ se não usar a reserva
             </Text>
-            
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalCancelBtn, { backgroundColor: theme.background, borderColor: theme.border }]}
@@ -1916,9 +1915,9 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.modalConfirmBtn, 
+                  styles.modalConfirmBtn,
                   { backgroundColor: theme.primary },
-                  (reserveForToday && spotReservationStatus.today_reserved) || (!reserveForToday && spotReservationStatus.tomorrow_reserved) 
+                  (reserveForToday && spotReservationStatus.today_reserved) || (!reserveForToday && spotReservationStatus.tomorrow_reserved)
                     ? { opacity: 0.5 } : {}
                 ]}
                 onPress={() => {
@@ -1940,7 +1939,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
           </Animated.View>
         </View>
       </Modal>
-      
+
       {/* Confirmation Modal */}
       <ConfirmModal
         visible={showConfirmModal}
@@ -1968,7 +1967,7 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  
+
   // Get current theme
   const theme = isDarkMode ? darkColors : lightColors;
   colors = theme; // Update global colors for skeleton
@@ -1976,14 +1975,14 @@ export default function App() {
   useEffect(() => {
     loadSettings();
   }, []);
-  
+
   // Persist dark mode setting (only after initial load)
   useEffect(() => {
     if (settingsLoaded) {
       AsyncStorage.setItem('isDarkMode', JSON.stringify(isDarkMode));
     }
   }, [isDarkMode, settingsLoaded]);
-  
+
   // Persist biometrics setting (only after initial load)
   useEffect(() => {
     if (settingsLoaded) {
@@ -1998,7 +1997,7 @@ export default function App() {
       if (darkModeSetting !== null) {
         setIsDarkMode(JSON.parse(darkModeSetting));
       }
-      
+
       // Load biometrics setting
       const biometricsSetting = await AsyncStorage.getItem('biometricsEnabled');
       if (biometricsSetting !== null) {
@@ -2015,17 +2014,17 @@ export default function App() {
     try {
       const storedUser = await AsyncStorage.getItem('user');
       const token = await AsyncStorage.getItem('token');
-      
+
       if (storedUser && token) {
         // Check if biometrics is enabled
         const biometricsSetting = await AsyncStorage.getItem('biometricsEnabled');
         const biometricsOn = biometricsSetting ? JSON.parse(biometricsSetting) : false;
-        
+
         if (biometricsOn) {
           // Check if device supports biometrics
           const compatible = await LocalAuthentication.hasHardwareAsync();
           const enrolled = await LocalAuthentication.isEnrolledAsync();
-          
+
           if (compatible && enrolled) {
             const result = await LocalAuthentication.authenticateAsync({
               promptMessage: 'Autenticar com biometria',
@@ -2033,7 +2032,7 @@ export default function App() {
               fallbackLabel: 'Usar senha',
               disableDeviceFallback: false,
             });
-            
+
             if (result.success) {
               setUser(JSON.parse(storedUser));
               showToast('success', 'Bem-vindo!', 'Autenticação biométrica bem-sucedida');
@@ -2063,7 +2062,7 @@ export default function App() {
     setUser(null);
     showToast('info', 'Sessão terminada', 'Até breve!');
   };
-  
+
   const handleSplashFinish = () => {
     setShowSplash(false);
     checkAuth();
@@ -2086,9 +2085,9 @@ export default function App() {
   return (
     <>
       {user ? (
-        <HomeScreen 
-          user={user} 
-          onLogout={handleLogout} 
+        <HomeScreen
+          user={user}
+          onLogout={handleLogout}
           theme={theme}
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
