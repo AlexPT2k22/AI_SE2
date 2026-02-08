@@ -1,71 +1,71 @@
-# Sistema Inteligente de Gestão de Estacionamento (AI Smart Parking)
+# AI Smart Parking — Intelligent Parking Management System
 
-Sistema completo e moderno de monitorização e gestão de estacionamento que utiliza Inteligência Artificial (Computer Vision) para detecção de vagas em tempo real e reconhecimento de matrículas (ALPR). A solução integra hardware IoT (ESP32), um backend robusto em FastAPI, uma interface frontend moderna em React e uma **aplicação mobile em React Native/Expo**.
+A comprehensive, production-ready parking monitoring and management system powered by Artificial Intelligence (Computer Vision) for real-time parking spot detection and Automatic License Plate Recognition (ALPR). The solution integrates IoT hardware (ESP32), a high-performance FastAPI backend, a modern React web dashboard, and a **cross-platform mobile application built with React Native/Expo**.
 
 ![Parking Monitor](frame.png)
 
 ---
 
-## Índice
+## Table of Contents
 
-- [Funcionalidades](#-funcionalidades)
-- [Arquitetura do Sistema](#-arquitetura-do-sistema)
-- [Tecnologias Utilizadas](#-tecnologias-utilizadas)
-- [Pré-requisitos](#-pré-requisitos)
-- [Instalação](#-instalação)
-  - [Backend](#1-configuração-do-backend)
-  - [Frontend](#2-configuração-do-frontend)
-  - [Mobile](#3-configuração-do-mobile)
-  - [Base de Dados](#4-configuração-da-base-de-dados)
-- [Configuração (.env)](#%EF%B8%8F-configuração-detalhada)
-- [Execução](#-execução)
-- [API Endpoints](#-documentação-da-api)
-- [Integração IoT (ESP32)](#-integração-iot-esp32)
-- [Estrutura do Projeto](#-estrutura-do-projeto)
-- [Troubleshooting](#-troubleshooting)
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [Technology Stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+  - [Backend](#1-backend-setup)
+  - [Frontend](#2-web-frontend-setup)
+  - [Mobile](#3-mobile-app-setup)
+  - [Database](#4-database-setup)
+- [Configuration (.env)](#detailed-configuration)
+- [Running the System](#running-the-system)
+- [API Documentation](#api-documentation)
+- [IoT Integration (ESP32)](#iot-integration-esp32)
+- [Project Structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Funcionalidades
+## Features
 
-### Visão Computacional & AI
-- **Detecção de Vagas em Tempo Real**: Utiliza um modelo CNN (ResNet/Custom) treinado para classificar vagas como "Livre" ou "Ocupada" a partir de feeds de vídeo (Câmeras IP/RTSP ou arquivos).
-- **Reconhecimento de Matrículas (ALPR)**: Integração com `fast-alpr` (baseado em YOLO) para leitura automática de matrículas nas entradas e saídas.
-- **Validação de Reservas**: Verifica automaticamente se um veículo estacionado numa vaga reservada possui autorização.
+### Computer Vision & AI
+- **Real-Time Spot Detection**: Uses a trained CNN model (ResNet/Custom) to classify parking spots as "Available" or "Occupied" from live video feeds (IP/RTSP cameras or video files).
+- **Automatic License Plate Recognition (ALPR)**: Integration with `fast-alpr` (YOLO-based) for automated plate reading at entry and exit gates.
+- **Reservation Validation**: Automatically verifies whether a vehicle parked in a reserved spot holds a valid authorization.
 
-### Gestão de Estacionamento
-- **Controlo de Acesso**: Registo automático de entradas e saídas via câmeras nos portões.
-- **Gestão de Sessões**: Cálculo automático do tempo de permanência e valor a pagar.
-- **Sistema de Reservas**: Permite aos utilizadores reservar vagas específicas por um determinado período.
-- **Pagamentos**: Simulação de pagamentos via Cartão, MBWay ou Dinheiro.
+### Parking Management
+- **Access Control**: Automatic logging of vehicle entries and exits via gate cameras.
+- **Session Management**: Automated calculation of parking duration and fees.
+- **Reservation System**: Allows users to reserve specific spots for a given time period.
+- **Payments**: Supports payment processing via Card, MBWay, or Cash.
 
 ### Interfaces
-- **Dashboard Web (Frontend)**: Interface moderna em React para visualização do estado do parque em tempo real.
-- **Painel Administrativo**: Gestão de vagas, visualização de logs de acesso e estatísticas financeiras.
-- **WebSocket**: Atualizações instantâneas do estado das vagas sem necessidade de refresh.
+- **Web Dashboard (Frontend)**: A modern React-based interface for real-time visualization of parking lot status.
+- **Admin Panel**: Spot management, access log viewing, and financial statistics.
+- **WebSocket**: Instant state updates pushed to clients without page refresh.
 
-### Aplicação Mobile
-A aplicação mobile oferece uma experiência completa para utilizadores finais:
+### Mobile Application
+The mobile app provides a full-featured experience for end users:
 
-#### Funcionalidades Core
-- **Login/Registo**: Autenticação de utilizadores.
-- **Dashboard**: Visualização rápida de estatísticas (vagas livres/ocupadas).
-- **Reservas**: Reservar vagas específicas por zona e período.
-- **Histórico**: Consultar sessões anteriores e pagamentos.
-- **Pagamentos**: Efetuar pagamentos de sessões ativas.
+#### Core Features
+- **Login / Registration**: User authentication.
+- **Dashboard**: Quick overview of parking statistics (available/occupied spots).
+- **Reservations**: Reserve specific spots by zone and time period.
+- **History**: View past sessions and payment records.
+- **Payments**: Process payments for active parking sessions.
 
 ---
 
-## Arquitetura do Sistema
+## System Architecture
 
-O sistema é composto por quatro módulos principais que comunicam entre si:
+The system consists of four main modules that communicate with each other:
 
 ```mermaid
 graph TD
     subgraph IoT_Hardware
-        ESP32_In[ESP32 Entrada] -->|POST Image| API
-        ESP32_Out[ESP32 Saída] -->|POST Image| API
-        Camera[ESP32 Vagas] -->|RTSP Stream| CV_Engine
+        ESP32_In[ESP32 Entry Gate] -->|POST Image| API
+        ESP32_Out[ESP32 Exit Gate] -->|POST Image| API
+        Camera[ESP32 Lot Camera] -->|RTSP Stream| CV_Engine
     end
 
     subgraph Backend_Server
@@ -92,61 +92,61 @@ graph TD
 
 ---
 
-## Tecnologias Utilizadas
+## Technology Stack
 
 ### Backend
 - **Python 3.13**
-- **FastAPI**: Framework web de alta performance.
-- **Uvicorn**: Servidor ASGI.
-- **AsyncPG**: Driver assíncrono para PostgreSQL.
-- **PyTorch & Torchvision**: Para execução dos modelos de Deep Learning.
-- **OpenCV**: Processamento de imagem.
-- **Fast-ALPR**: Detecção e OCR de matrículas.
+- **FastAPI**: High-performance async web framework.
+- **Uvicorn**: ASGI server.
+- **AsyncPG**: Asynchronous PostgreSQL driver.
+- **PyTorch & Torchvision**: Deep Learning model inference.
+- **OpenCV**: Image processing pipeline.
+- **Fast-ALPR**: License plate detection and OCR.
 
-### Frontend Web
-- **React**: Biblioteca JS para interfaces.
-- **Vite**: Build tool rápida.
-- **TailwindCSS** (via index.css): Estilização.
-- **Axios**: Requisições HTTP.
+### Web Frontend
+- **React**: UI component library.
+- **Vite**: Fast build tool and dev server.
+- **TailwindCSS** (via index.css): Utility-first styling.
+- **Axios**: HTTP client.
 
 ### Mobile
-- **React Native**: Framework para apps nativas.
-- **Expo SDK ~54**: Plataforma de desenvolvimento.
-- **expo-haptics**: Feedback tátil.
-- **expo-linear-gradient**: Gradientes para splash screen.
-- **react-native-toast-message**: Notificações toast.
-- **@react-native-async-storage/async-storage**: Persistência local.
+- **React Native**: Cross-platform mobile framework.
+- **Expo SDK ~54**: Development platform and toolchain.
+- **expo-haptics**: Haptic feedback.
+- **expo-linear-gradient**: Gradient support for splash screen.
+- **react-native-toast-message**: Toast notifications.
+- **@react-native-async-storage/async-storage**: Local data persistence.
 
-### Infraestrutura & Dados
-- **PostgreSQL**: Base de dados relacional.
-- **Supabase**: Armazenamento de imagens (opcional, mas recomendado).
-- **Docker** (Opcional): Para containerização.
+### Infrastructure & Data
+- **PostgreSQL**: Relational database.
+- **Supabase**: Image storage (optional but recommended).
+- **Docker** (Optional): Containerization support.
 
 ---
 
-## Pré-requisitos
+## Prerequisites
 
-Antes de começar, certifique-se de ter instalado:
-- **Python 3.10+** (Recomendado 3.13)
-- **Node.js 18+** e **npm**
+Before getting started, ensure you have the following installed:
+- **Python 3.10+** (3.13 recommended)
+- **Node.js 18+** and **npm**
 - **PostgreSQL 13+**
 - **Git**
-- **Expo CLI** (para desenvolvimento mobile): `npm install -g expo-cli`
-- **Expo Go** app no telemóvel (iOS/Android) para testes
+- **Expo CLI** (for mobile development): `npm install -g expo-cli`
+- **Expo Go** app on your mobile device (iOS/Android) for testing
 
 ---
 
-## Instalação
+## Installation
 
-### 1. Configuração do Backend
+### 1. Backend Setup
 
-1.  **Clone o repositório:**
+1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/seu-usuario/AI_SE2.git
+    git clone https://github.com/AlexPT2k22/AI_SE2.git
     cd AI_SE2
     ```
 
-2.  **Crie e ative o ambiente virtual:**
+2.  **Create and activate a virtual environment:**
     ```bash
     # Windows
     python -m venv .venv
@@ -157,87 +157,87 @@ Antes de começar, certifique-se de ter instalado:
     source .venv/bin/activate
     ```
 
-3.  **Instale as dependências:**
+3.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
-    *Nota: Se tiver problemas com o `fast-alpr` ou `torch`, consulte a documentação oficial dessas bibliotecas para instalação específica do seu SO/Hardware (CUDA vs CPU).*
+    *Note: If you encounter issues with `fast-alpr` or `torch`, refer to the official documentation of those libraries for platform-specific installation instructions (CUDA vs CPU).*
 
-### 2. Configuração do Frontend Web
+### 2. Web Frontend Setup
 
-1.  **Navegue para a pasta do frontend:**
+1.  **Navigate to the frontend directory:**
     ```bash
     cd frontend
     ```
 
-2.  **Instale as dependências do Node:**
+2.  **Install Node dependencies:**
     ```bash
     npm install
     ```
 
-### 3. Configuração do Mobile
+### 3. Mobile App Setup
 
-1.  **Navegue para a pasta mobile:**
+1.  **Navigate to the mobile directory:**
     ```bash
     cd mobile
     ```
 
-2.  **Instale as dependências:**
+2.  **Install dependencies:**
     ```bash
     npm install
     ```
 
-3.  **Configure a URL da API:**
-    No ficheiro `App.js`, atualize a constante `API_URL` para apontar para o seu servidor backend:
+3.  **Configure the API URL:**
+    In the `App.js` file, update the `API_URL` constant to point to your backend server:
     ```javascript
     const API_URL = 'http://YOUR_IP:8000';
     ```
-    *Use o IP da sua máquina na rede local (ex: 192.168.1.100) em vez de localhost para testes em dispositivos físicos.*
+    *Use your machine's local network IP address (e.g., 192.168.1.100) instead of localhost when testing on physical devices.*
 
-### 4. Configuração da Base de Dados
+### 4. Database Setup
 
-1.  **Crie a base de dados no PostgreSQL:**
+1.  **Create the database in PostgreSQL:**
     ```sql
     CREATE DATABASE aiparking;
     ```
 
-2.  **Execute o script de criação das tabelas:**
-    Você pode usar o arquivo `tables.txt` (conteúdo SQL) para criar as tabelas necessárias (`parking_sessions`, `parking_payments`, `parking_web_users`, `parking_manual_reservations`).
+2.  **Run the table creation script:**
+    Use the `tables.txt` file (SQL content) to create the required tables (`parking_sessions`, `parking_payments`, `parking_web_users`, `parking_manual_reservations`).
     ```bash
     psql -d aiparking -f tables.txt
     ```
 
 ---
 
-## Configuração Detalhada
+## Detailed Configuration
 
-Crie um arquivo `.env` na raiz do projeto (`AI_SE2/`) com as seguintes variáveis:
+Create a `.env` file in the project root (`AI_SE2/`) with the following variables:
 
-| Variável | Descrição | Valor Padrão / Exemplo |
+| Variable | Description | Default / Example |
 | :--- | :--- | :--- |
 | **DATABASE** | | |
-| `DATABASE_URL` | URL de conexão PostgreSQL | `postgresql://user:pass@localhost:5432/aiparking` |
-| **SUPABASE (Opcional)** | Armazenamento de imagens | |
-| `SUPABASE_URL` | URL do projeto Supabase | `https://xyz.supabase.co` |
-| `SUPABASE_KEY` | Chave de API (Service Role/Anon) | `eyJ...` |
-| `SUPABASE_BUCKET` | Nome do bucket | `parking-images` |
-| `SUPABASE_PUBLIC_BUCKET` | Se o bucket é público | `false` |
-| **CONFIGURAÇÃO GERAL** | | |
-| `VIDEO_SOURCE` | Caminho do vídeo ou URL RTSP | `video.mp4` ou `rtsp://...` ou `0` (webcam) |
-| `SPOTS_FILE` | Arquivo JSON com coordenadas | `parking_spots.json` |
-| `MODEL_FILE` | Modelo treinado (.pth) | `spot_classifier.pth` |
-| `DEVICE` | Dispositivo de inferência | `auto` (escolhe cuda se disponível), `cpu`, `cuda` |
-| `SPOT_THRESHOLD` | Confiança mínima para ocupação | `0.7` |
-| `PARKING_RATE_PER_HOUR` | Custo por hora (€) | `1.50` |
-| `SESSION_SECRET` | Chave para sessões HTTP | `dev-secret-change-me` |
-| **ALPR (Matrículas)** | | |
-| `ENABLE_ALPR` | Ativar reconhecimento? | `true` |
-| `ALPR_WORKERS` | Threads para ALPR | `1` |
-| `ALPR_DETECTOR_MODEL` | Modelo de detecção | `yolo-v9-s-608-license-plate-end2end` |
-| `ALPR_OCR_MODEL` | Modelo de OCR | `cct-s-v1-global-model` |
+| `DATABASE_URL` | PostgreSQL connection URL | `postgresql://user:pass@localhost:5432/aiparking` |
+| **SUPABASE (Optional)** | Image storage | |
+| `SUPABASE_URL` | Supabase project URL | `https://xyz.supabase.co` |
+| `SUPABASE_KEY` | API key (Service Role/Anon) | `eyJ...` |
+| `SUPABASE_BUCKET` | Bucket name | `parking-images` |
+| `SUPABASE_PUBLIC_BUCKET` | Whether the bucket is public | `false` |
+| **GENERAL SETTINGS** | | |
+| `VIDEO_SOURCE` | Video file path or RTSP URL | `video.mp4`, `rtsp://...`, or `0` (webcam) |
+| `SPOTS_FILE` | JSON file with spot coordinates | `parking_spots.json` |
+| `MODEL_FILE` | Trained model file (.pth) | `spot_classifier.pth` |
+| `DEVICE` | Inference device | `auto` (uses CUDA if available), `cpu`, `cuda` |
+| `SPOT_THRESHOLD` | Minimum confidence for occupancy | `0.7` |
+| `PARKING_RATE_PER_HOUR` | Hourly rate (€) | `1.50` |
+| `SESSION_SECRET` | Secret key for HTTP sessions | `dev-secret-change-me` |
+| **ALPR (License Plates)** | | |
+| `ENABLE_ALPR` | Enable plate recognition | `true` |
+| `ALPR_WORKERS` | ALPR processing threads | `1` |
+| `ALPR_DETECTOR_MODEL` | Detection model | `yolo-v9-s-608-license-plate-end2end` |
+| `ALPR_OCR_MODEL` | OCR model | `cct-s-v1-global-model` |
 
-### Configuração das Vagas (`parking_spots.json`)
-Este arquivo define as coordenadas dos polígonos de cada vaga. Pode ser gerado usando o script auxiliar `mark_parking_spots.py`.
+### Parking Spot Configuration (`parking_spots.json`)
+This file defines the polygon coordinates for each parking spot. It can be generated using the `mark_parking_spots.py` helper script.
 
 ```json
 {
@@ -255,190 +255,191 @@ Este arquivo define as coordenadas dos polígonos de cada vaga. Pode ser gerado 
 
 ---
 
-## Configuração do Estacionamento (Obrigatório)
+## Parking Lot Setup (Required)
 
-> ⚠️ **IMPORTANTE**: Antes de executar o sistema, é necessário configurar as vagas do seu estacionamento. O ficheiro `parking_spots.json` incluído é apenas um exemplo e **não funcionará** com a sua câmara/vídeo.
+> ⚠️ **IMPORTANT**: Before running the system, you must configure the parking spots for your specific lot. The included `parking_spots.json` file is only a sample and **will not work** with your camera or video feed.
 
-### Passo 1: Capturar Frame de Referência
+### Step 1: Capture a Reference Frame
 
-Se estiver a usar uma ESP32-CAM, capture um frame para usar como referência:
+If using an ESP32-CAM, capture a reference frame:
 
 ```bash
-# Edita primeiro o IP da câmara no script (ESP32_URL)
+# First, update the camera IP address in the script (ESP32_URL)
 python capture_esp32_frame.py
 ```
-*Gera o ficheiro `esp32_reference_frame.jpg`.*
+*This generates the `esp32_reference_frame.jpg` file.*
 
-Se estiver a usar um ficheiro de vídeo, pode saltar este passo e usar o vídeo diretamente no passo seguinte.
+If using a video file, you can skip this step and use the video directly in the next step.
 
-### Passo 2: Marcar as Vagas
+### Step 2: Mark Parking Spots
 
-Use a ferramenta interativa para desenhar os polígonos de cada vaga:
+Use the interactive tool to draw polygons for each parking spot:
 
 ```bash
-# A partir de uma imagem (ESP32 ou screenshot)
+# From an image (ESP32 capture or screenshot)
 python mark_parking_spots.py --source esp32_reference_frame.jpg --output parking_spots.json --show
 
-# A partir de um vídeo (usa o primeiro frame)
+# From a video file (uses the first frame)
 python mark_parking_spots.py --source video.mp4 --output parking_spots.json --show
 
-# A partir de um frame específico do vídeo
+# From a specific video frame
 python mark_parking_spots.py --source video.mp4 --frame 100 --output parking_spots.json --show
 ```
 
-**Controlos da Interface:**
-| Tecla | Função |
+**Interface Controls:**
+| Key | Action |
 |------------|--------|
-| **Click esquerdo** | Adiciona um ponto (4 pontos = 1 vaga) |
-| **Click direito** | Remove o último ponto |
-| **Enter** | Confirma a vaga atual e passa à próxima |
-| **S** | Guarda o ficheiro JSON |
-| **Q / ESC** | Sair |
+| **Left Click** | Add a point (4 points = 1 spot) |
+| **Right Click** | Remove the last point |
+| **Enter** | Confirm the current spot and move to the next |
+| **S** | Save the JSON file |
+| **Q / ESC** | Quit |
 
-### Passo 3: Verificar a Configuração (Opcional)
+### Step 3: Verify the Configuration (Optional)
 
-Visualize as vagas sobrepostas no vídeo para confirmar que estão corretas:
+Visualize the spots overlaid on the video to confirm they are correctly positioned:
 
 ```bash
 python visualize_spots_on_video.py --video video.mp4 --spots parking_spots.json
 ```
 
-### Passo 4: Executar o Sistema
+### Step 4: Run the System
 
-Depois de configurar as vagas, pode iniciar o backend normalmente (ver secção [Execução](#execução)).
+Once the spots are configured, start the backend as described in the [Running the System](#running-the-system) section.
 
 ---
 
-## Execução
+## Running the System
 
-Recomenda-se abrir três terminais:
+It is recommended to open three terminal windows:
 
 ### Terminal 1: Backend
 ```bash
-# Na raiz do projeto (com venv ativado)
+# From the project root (with the virtual environment activated)
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-*O servidor iniciará em http://localhost:8000. A documentação Swagger estará em /docs.*
+*The server will start at http://localhost:8000. Swagger API documentation is available at /docs.*
 
-### Terminal 2: Frontend Web
+### Terminal 2: Web Frontend
 ```bash
-# Na pasta frontend/
+# From the frontend/ directory
 npm run dev
 ```
-*A aplicação web estará disponível (geralmente) em http://localhost:5173.*
+*The web application will be available (typically) at http://localhost:5173.*
 
-### Terminal 3: Mobile
+### Terminal 3: Mobile App
 ```bash
-# Na pasta mobile/
+# From the mobile/ directory
 npm start
-# ou
+# or
 npx expo start
 ```
-*Scan o QR code com a app Expo Go no telemóvel ou pressione `a` para abrir no emulador Android / `i` para iOS. (ou conecte via USB e pressione a tecla)*
+*Scan the QR code with the Expo Go app on your phone, or press `a` to open the Android emulator / `i` for the iOS simulator.*
 
 ---
 
-## Documentação da API
+## API Documentation
 
-Principais endpoints disponíveis:
+Key available endpoints:
 
-### Monitorização
-- `GET /parking`: Estado atual de todas as vagas (JSON).
-- `GET /video_feed`: Stream MJPEG do vídeo com anotações em tempo real.
-- `WS /ws`: WebSocket para eventos de mudança de estado.
+### Monitoring
+- `GET /parking`: Current status of all parking spots (JSON).
+- `GET /video_feed`: MJPEG video stream with real-time annotations.
+- `WS /ws`: WebSocket for spot state change events.
 
-### Entrada e Saída (Integração ESP32)
-- `POST /api/entry`: Regista entrada. Recebe `camera_id` e `image` (file). Retorna `session_id`.
-- `POST /api/exit`: Regista saída. Recebe `camera_id` e `image` (file). Calcula valor a pagar.
+### Entry & Exit (ESP32 Integration)
+- `POST /api/entry`: Registers a vehicle entry. Accepts `camera_id` and `image` (file). Returns `session_id`.
+- `POST /api/exit`: Registers a vehicle exit. Accepts `camera_id` and `image` (file). Calculates the amount due.
 
-### Reservas
-- `GET /api/reservations`: Lista reservas ativas.
-- `POST /api/reservations`: Cria nova reserva (Requer Auth).
-- `DELETE /api/reservations/{spot}`: Cancela reserva.
+### Reservations
+- `GET /api/reservations`: Lists active reservations.
+- `POST /api/reservations`: Creates a new reservation (requires authentication).
+- `DELETE /api/reservations/{spot}`: Cancels a reservation.
 
-### Pagamentos
-- `POST /api/payments`: Regista pagamento de uma sessão.
-- `GET /api/sessions`: Histórico de sessões.
+### Payments
+- `POST /api/payments`: Records a payment for a session.
+- `GET /api/sessions`: Retrieves session history.
 
 ---
 
-## Integração IoT (ESP32)
+## IoT Integration (ESP32)
 
-O sistema espera que os dispositivos IoT (câmeras nos portões) enviem requisições HTTP POST `multipart/form-data` para os endpoints de entrada e saída.
+The system expects IoT devices (gate cameras) to send HTTP POST `multipart/form-data` requests to the entry and exit endpoints.
 
-**Exemplo de fluxo:**
-1. Carro aproxima-se do portão.
-2. ESP32 tira foto.
-3. ESP32 envia POST para `http://SERVER_IP:8000/api/entry` com a imagem.
-4. Servidor processa ALPR, cria sessão e retorna sucesso.
-5. ESP32 abre a cancela.
+**Example workflow:**
+1. A vehicle approaches the gate.
+2. The ESP32 captures an image.
+3. The ESP32 sends a POST request to `http://SERVER_IP:8000/api/entry` with the image.
+4. The server processes ALPR, creates a session, and returns a success response.
+5. The ESP32 opens the barrier.
+
 ---
 
-## Ferramentas de Debug
+## Debug Tools
 
-### API de Debug (Forçar Estado de Vagas)
+### Debug API (Force Spot State)
 
-Endpoints para forçar manualmente o estado de uma vaga (útil para testes sem câmara):
+Endpoints to manually override the state of a parking spot (useful for testing without a camera):
 
 ```bash
-# Forçar vaga como LIVRE
-curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"vaga01\", \"occupied\": false}"
+# Force a spot as AVAILABLE
+curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"spot01\", \"occupied\": false}"
 
-# Forçar vaga como OCUPADA
-curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"vaga01\", \"occupied\": true}"
+# Force a spot as OCCUPIED
+curl -X POST http://localhost:8000/api/debug/spot -H "Content-Type: application/json" -d "{\"spot\": \"spot01\", \"occupied\": true}"
 
-# Resetar vaga para deteção automática (volta a usar o modelo AI)
-curl -X DELETE http://localhost:8000/api/debug/spot/vaga01
+# Reset a spot to automatic AI detection
+curl -X DELETE http://localhost:8000/api/debug/spot/spot01
 ```
 
-**Respostas:**
+**Responses:**
 ```json
-// POST - Sucesso
-{"message": "Spot vaga01 definido como livre", "spot": "vaga01", "occupied": false}
+// POST - Success
+{"message": "Spot spot01 set as available", "spot": "spot01", "occupied": false}
 
-// DELETE - Sucesso
-{"message": "Spot vaga01 resetado para deteção automática"}
+// DELETE - Success
+{"message": "Spot spot01 reset to automatic detection"}
 ```
 
-### Opções Avançadas do Marcador de Vagas
+### Advanced Spot Marker Options
 
 ```bash
-# Personalizar prefixo e índice inicial dos nomes das vagas
-python mark_parking_spots.py --source frame.jpg --output parking_spots.json --label-prefix "vaga" --start-index 1
-# Resultado: vaga01, vaga02, vaga03...
+# Customize spot label prefix and starting index
+python mark_parking_spots.py --source frame.jpg --output parking_spots.json --label-prefix "spot" --start-index 1
+# Result: spot01, spot02, spot03...
 
-# Exportar vídeo anotado (sem janela de preview)
+# Export annotated video (without preview window)
 python visualize_spots_on_video.py --video video.mp4 --spots parking_spots.json --output runs/video_annotated.mp4 --no-preview
 ```
 
 ---
 
-## Estrutura do Projeto
+## Project Structure
 
 ```
 AI_SE2/
-├── frontend/               # Código fonte React/Vite (Web)
+├── frontend/               # React/Vite web frontend source code
 │   ├── src/
-│   │   ├── components/     # Componentes reutilizáveis
-│   │   ├── pages/          # Páginas da aplicação
-│   │   └── styles/         # Estilos CSS
+│   │   ├── components/     # Reusable UI components
+│   │   ├── pages/          # Application pages
+│   │   └── styles/         # CSS stylesheets
 │   ├── package.json
 │   └── vite.config.js
-├── mobile/                 # Código fonte React Native/Expo
-│   ├── App.js              # Aplicação principal (single-file)
+├── mobile/                 # React Native/Expo mobile app source code
+│   ├── App.js              # Main application (single-file)
 │   ├── package.json
-│   └── app.json            # Configuração Expo
-├── esp32_firmware/         # Código Arduino para ESP32
-│   ├── center_camera/      # Câmera central
-│   └── entry_gate/         # Portões de entrada/saída
-├── main.py                 # Aplicação Principal (FastAPI)
-├── alpr.py                 # Módulo wrapper para ALPR
-├── spot_classifier.py      # Definição do modelo PyTorch (CNN)
-├── supabaseStorage.py      # Serviço de upload para Supabase
-├── requirements.txt        # Dependências Python
-├── parking_spots.json      # Configuração das vagas
-├── tables.txt              # Schema da Base de Dados
-├── .env                    # Variáveis de ambiente
+│   └── app.json            # Expo configuration
+├── esp32_firmware/         # Arduino code for ESP32 devices
+│   ├── center_camera/      # Lot monitoring camera
+│   └── entry_gate/         # Entry/exit gate cameras
+├── main.py                 # Main application (FastAPI)
+├── alpr.py                 # ALPR wrapper module
+├── spot_classifier.py      # PyTorch CNN model definition
+├── supabaseStorage.py      # Supabase upload service
+├── requirements.txt        # Python dependencies
+├── parking_spots.json      # Parking spot configuration
+├── tables.txt              # Database schema
+├── .env                    # Environment variables
 └── ...
 ```
 
@@ -447,14 +448,14 @@ AI_SE2/
 ## Troubleshooting
 
 ### Backend
-- **Erro `ImportError: fast_alpr`**: Certifique-se de que instalou o `fast-alpr` corretamente. Em Windows, pode requerer passos adicionais ou uso de WSL2 se as bibliotecas C++ compiladas não estiverem disponíveis.
-- **Erro de Conexão DB**: Verifique se o serviço PostgreSQL está rodando e se a `DATABASE_URL` no `.env` está correta.
-- **Vídeo não abre**: Verifique o caminho em `VIDEO_SOURCE`. Se usar webcam, tente index `0` ou `1`. Se usar arquivo, garanta que o caminho é absoluto ou relativo à raiz.
+- **`ImportError: fast_alpr`**: Ensure `fast-alpr` is installed correctly. On Windows, additional steps or WSL2 may be required if the compiled C++ libraries are not available.
+- **Database connection error**: Verify that the PostgreSQL service is running and that the `DATABASE_URL` in your `.env` file is correct.
+- **Video not opening**: Check the `VIDEO_SOURCE` path. For webcam, try index `0` or `1`. For files, ensure the path is absolute or relative to the project root.
 
-### Frontend Web
-- **Frontend não conecta ao Backend**: Verifique se o frontend está configurado para apontar para `localhost:8000` (proxy no `vite.config.js` ou variável de ambiente VITE).
+### Web Frontend
+- **Frontend cannot connect to backend**: Ensure the frontend is configured to point to `localhost:8000` (via the proxy in `vite.config.js` or a VITE environment variable).
 
 ### Mobile
-- **App não conecta ao Backend**: Use o IP da sua máquina na rede local (ex: `192.168.1.100`) em vez de `localhost`. Verifique se o telemóvel e o computador estão na mesma rede Wi-Fi.
-- **Expo Go não carrega**: Certifique-se de que o firewall não está a bloquear as portas do Expo (19000, 19001, 8081).
-- **Haptics não funciona**: O feedback háptico só funciona em dispositivos físicos, não em emuladores/simuladores.
+- **App cannot connect to backend**: Use your machine's local network IP (e.g., `192.168.1.100`) instead of `localhost`. Ensure both your phone and computer are on the same Wi-Fi network.
+- **Expo Go not loading**: Make sure your firewall is not blocking the Expo ports (19000, 19001, 8081).
+- **Haptics not working**: Haptic feedback only works on physical devices, not on emulators or simulators.
