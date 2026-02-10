@@ -4,7 +4,7 @@
 -- Fluxo: Registo → Login → Entrada → Estacionamento → Pagamento Automático → Saída
 -- =====================================================
 
--- DROP ALL TABLES (começar do zero)
+-- ⚠️ DROP ALL TABLES (começar do zero)
 -- Ordem: tabelas filhas primeiro (por causa das foreign keys)
 DROP TABLE IF EXISTS public.parking_notifications CASCADE;
 DROP TABLE IF EXISTS public.parking_payments CASCADE;

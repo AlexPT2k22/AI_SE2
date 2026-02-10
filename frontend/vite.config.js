@@ -4,40 +4,40 @@ import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
- plugins: [react()],
- resolve: {
- alias: {
- '@': path.resolve(__dirname, './src'),
- },
- },
- server: {
- proxy: {
- '/api': {
- target: 'http://localhost:8000',
- changeOrigin: true,
- },
- '/parking': {
- target: 'http://localhost:8000',
- changeOrigin: true,
- },
- '/video_feed': {
- target: 'http://localhost:8000',
- changeOrigin: true,
- },
- '/plate_events': {
- target: 'http://localhost:8000',
- changeOrigin: true,
- },
- '/ws': {
- target: 'ws://localhost:8000',
- ws: true,
- },
- },
- },
- test: {
- globals: true,
- environment: 'jsdom',
- setupFiles: './src/test/setup.js',
- css: true,
- },
+    plugins: [react()],
+    resolve: {
+        alias: {
+            '@': path.resolve(__dirname, './src'),
+        },
+    },
+    server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+            },
+            '/parking': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+            },
+            '/video_feed': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+            },
+            '/plate_events': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+            },
+            '/ws': {
+                target: 'ws://localhost:8000',
+                ws: true,
+            },
+        },
+    },
+    test: {
+        globals: true,
+        environment: 'jsdom',
+        setupFiles: './src/test/setup.js',
+        css: true,
+    },
 });

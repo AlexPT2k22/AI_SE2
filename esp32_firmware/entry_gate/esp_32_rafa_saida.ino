@@ -7,6 +7,8 @@
 // =================== CONFIGURAÇÕES ===================
 const char *ssid = "S23 FE de Alexandre";
 const char *password = "alexpt2k20";
+//const char *ssid = "MEO-80A450";
+//const char *password = "29e5854ca7";
 
 // CONFIGURAÇÕES DA SAÍDA (DIFERENTES DA ENTRADA)
 const char* serverHost = "10.114.226.35";
