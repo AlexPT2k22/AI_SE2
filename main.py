@@ -63,8 +63,8 @@ SPOTS_FILE = Path(os.getenv("SPOTS_FILE", "parking_spots.json"))
 MODEL_FILE = Path(os.getenv("MODEL_FILE", "spot_classifier.pth"))
 
 DEVICE_NAME = os.getenv("DEVICE", "auto")                       # "cpu", "cuda" ou "auto"
-SPOT_THRESHOLD = float(os.getenv("SPOT_THRESHOLD", 0.7))
-HISTORY_LEN = int(os.getenv("HISTORY_LEN", 5))
+SPOT_THRESHOLD = float(os.getenv("SPOT_THRESHOLD", 0.65))
+HISTORY_LEN = int(os.getenv("HISTORY_LEN", 3))
 PROCESS_EVERY_N_FRAMES = int(os.getenv("PROCESS_EVERY_N_FRAMES", 2))  # 1 em cada N frames
 IMG_SIZE = 64  # tamanho da imagem de input para a CNN
 PARKING_RATE_PER_HOUR = float(os.getenv("PARKING_RATE_PER_HOUR", 1.50))  # tarifa por hora

@@ -23,6 +23,7 @@ IMG_SIZE = 64
 BATCH_SIZE = 16
 EPOCHS = 30
 VAL_SPLIT = 0.2
+TEST_SPLIT = 0.1
 SEED = 42
 
 # ============ DATASET ============
@@ -140,12 +141,15 @@ def main():
     paths, labels = zip(*combined)
     paths, labels = list(paths), list(labels)
     
+    n_test = max(1, int(len(paths) * TEST_SPLIT))
     n_val = max(2, int(len(paths) * VAL_SPLIT))
-    val_paths, val_labels = paths[:n_val], labels[:n_val]
-    train_paths, train_labels = paths[n_val:], labels[n_val:]
+    test_paths, test_labels = paths[:n_test], labels[:n_test]
+    val_paths, val_labels = paths[n_test:n_test + n_val], labels[n_test:n_test + n_val]
+    train_paths, train_labels = paths[n_test + n_val:], labels[n_test + n_val:]
     
-    print(f"\n   Treino: {len(train_paths)}")
-    print(f"   Validação: {len(val_paths)}")
+    print(f"\n   Treino: {len(train_paths)} (70%)")
+    print(f"   Validação: {len(val_paths)} (20%)")
+    print(f"   Teste: {len(test_paths)} (10%)")
     
     # DataLoaders
     train_ds = SpotDataset(train_paths, train_labels, train=True)
@@ -230,13 +234,34 @@ def main():
             break
     
     print(f"\n🎉 Treino concluído!")
-    print(f"   Melhor accuracy: {best_val_acc:.1%}")
+    print(f"   Melhor val accuracy: {best_val_acc:.1%}")
     print(f"   Modelo guardado: {MODEL_OUT}")
     
-    if best_val_acc < 0.7:
-        print(f"\n⚠️  A accuracy está baixa ({best_val_acc:.1%})")
+    # ============ AVALIAÇÃO NO CONJUNTO DE TESTE ============
+    print(f"\n🧪 A avaliar no conjunto de teste ({len(test_paths)} amostras)...")
+    model.load_state_dict(torch.load(MODEL_OUT, weights_only=True))
+    model.eval()
+    
+    test_ds = SpotDataset(test_paths, test_labels, train=False)
+    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False)
+    
+    correct_test = 0
+    total_test = 0
+    with torch.no_grad():
+        for imgs, lbls in test_loader:
+            imgs, lbls = imgs.to(device), torch.tensor(lbls).to(device)
+            outputs = model(imgs)
+            preds = outputs.argmax(dim=1)
+            correct_test += (preds == lbls).sum().item()
+            total_test += lbls.size(0)
+    
+    test_acc = correct_test / total_test if total_test > 0 else 0
+    print(f"   ✅ Test Accuracy: {test_acc:.1%} ({correct_test}/{total_test})")
+    
+    if test_acc < 0.7:
+        print(f"\n⚠️  A accuracy está baixa ({test_acc:.1%})")
         print("   Sugestões:")
-        print("   - Adiciona mais imagens com collect_training_data.py")
+        print("   - Adiciona mais imagens com collect_from_video.py")
         print("   - Verifica se as coordenadas das vagas estão corretas")
 
 if __name__ == "__main__":
