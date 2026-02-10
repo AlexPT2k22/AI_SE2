@@ -1,11 +1,11 @@
 // TugaPark Mobile App - Simplified Main Entry
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
+import React, { useState, useEffect, useRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
   SafeAreaView,
   ActivityIndicator,
   ScrollView,
@@ -16,20 +16,20 @@ import {
   Animated,
   Switch,
   Dimensions,
-} from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
-import * as LocalAuthentication from 'expo-local-authentication';
-import { LinearGradient } from 'expo-linear-gradient';
-import Toast from 'react-native-toast-message';
+} from "react-native";
+import { StatusBar } from "expo-status-bar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+import Svg, { Path, Circle, Rect } from "react-native-svg";
+import * as Haptics from "expo-haptics";
+import * as LocalAuthentication from "expo-local-authentication";
+import { LinearGradient } from "expo-linear-gradient";
+import Toast from "react-native-toast-message";
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // SVG Icon Components
-const DangerIcon = ({ size = 24, color = '#ef4444' }) => (
+const DangerIcon = ({ size = 24, color = "#ef4444" }) => (
   <Svg width={size} height={size} viewBox="0 0 30 30">
     <Path
       fill={color}
@@ -38,7 +38,7 @@ const DangerIcon = ({ size = 24, color = '#ef4444' }) => (
   </Svg>
 );
 
-const ClockIcon = ({ size = 24, color = '#f59e0b' }) => (
+const ClockIcon = ({ size = 24, color = "#f59e0b" }) => (
   <Svg width={size} height={size} viewBox="0 0 64 64">
     <Path
       fill={color}
@@ -47,7 +47,7 @@ const ClockIcon = ({ size = 24, color = '#f59e0b' }) => (
   </Svg>
 );
 
-const PaymentIcon = ({ size = 24, color = '#3b82f6' }) => (
+const PaymentIcon = ({ size = 24, color = "#3b82f6" }) => (
   <Svg width={size} height={size} viewBox="0 0 30 30">
     <Path
       fill={color}
@@ -57,7 +57,7 @@ const PaymentIcon = ({ size = 24, color = '#3b82f6' }) => (
 );
 
 // Empty State Icon
-const EmptyBoxIcon = ({ size = 80, color = '#999999' }) => (
+const EmptyBoxIcon = ({ size = 80, color = "#999999" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path
       fill={color}
@@ -67,7 +67,7 @@ const EmptyBoxIcon = ({ size = 80, color = '#999999' }) => (
 );
 
 // Parking Icon for Empty Spots
-const ParkingIcon = ({ size = 80, color = '#999999' }) => (
+const ParkingIcon = ({ size = 80, color = "#999999" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path
       fill={color}
@@ -77,7 +77,7 @@ const ParkingIcon = ({ size = 80, color = '#999999' }) => (
 );
 
 // History Icon for Empty Sessions
-const HistoryIcon = ({ size = 80, color = '#999999' }) => (
+const HistoryIcon = ({ size = 80, color = "#999999" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path
       fill={color}
@@ -87,7 +87,7 @@ const HistoryIcon = ({ size = 80, color = '#999999' }) => (
 );
 
 // Biometric Icon
-const BiometricIcon = ({ size = 24, color = '#666666' }) => (
+const BiometricIcon = ({ size = 24, color = "#666666" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path
       fill={color}
@@ -97,7 +97,7 @@ const BiometricIcon = ({ size = 24, color = '#666666' }) => (
 );
 
 // Moon Icon for Dark Mode
-const MoonIcon = ({ size = 24, color = '#666666' }) => (
+const MoonIcon = ({ size = 24, color = "#666666" }) => (
   <Svg width={size} height={size} viewBox="0 0 64 64">
     <Path
       fill={color}
@@ -108,64 +108,66 @@ const MoonIcon = ({ size = 24, color = '#666666' }) => (
 
 // API Configuration
 //const API_BASE_URL = 'http://10.0.2.2:8000'; // Android emulator
-const API_BASE_URL = 'http://192.168.243.164:8000'; // Replace with your IP for physical device
+const API_BASE_URL = "http://192.168.68.125:8000"; // Replace with your IP for physical device
 
 // WebSocket URL (derived from API URL)
-const WS_URL = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws';
+const WS_URL =
+  API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://") +
+  "/ws";
 
 // Colors - Light Theme (matching frontend)
 const lightColors = {
-  primary: '#c8e620',          // Lime Green
-  primaryDark: '#9fc21a',
-  secondary: '#1e1e1e',        // Dark
-  background: '#f5f5f5',       // Light gray
-  surface: '#ffffff',          // White
-  surfaceHover: '#f0f0f0',
-  text: '#1a1a1a',             // Dark text
-  textSecondary: '#666666',
-  textMuted: '#999999',
-  textInverse: '#ffffff',
-  border: '#e5e5e5',
-  success: '#22c55e',
-  danger: '#ef4444',
-  warning: '#f59e0b',
-  info: '#3b82f6',
-  spotAvailable: '#c8e620',
-  spotOccupied: '#ef4444',
-  spotReserved: '#f59e0b',
-  skeleton: '#e0e0e0',
-  skeletonHighlight: '#f5f5f5',
+  primary: "#c8e620", // Lime Green
+  primaryDark: "#9fc21a",
+  secondary: "#1e1e1e", // Dark
+  background: "#f5f5f5", // Light gray
+  surface: "#ffffff", // White
+  surfaceHover: "#f0f0f0",
+  text: "#1a1a1a", // Dark text
+  textSecondary: "#666666",
+  textMuted: "#999999",
+  textInverse: "#ffffff",
+  border: "#e5e5e5",
+  success: "#22c55e",
+  danger: "#ef4444",
+  warning: "#f59e0b",
+  info: "#3b82f6",
+  spotAvailable: "#c8e620",
+  spotOccupied: "#ef4444",
+  spotReserved: "#f59e0b",
+  skeleton: "#e0e0e0",
+  skeletonHighlight: "#f5f5f5",
 };
 
 // Colors - Dark Theme
 const darkColors = {
-  primary: '#97d700',          // Keep lime green
-  primaryDark: '#7ab800',
-  secondary: '#ffffff',        // Invert for contrast
-  background: '#121212',       // Dark background
-  surface: '#1e1e1e',          // Dark surface
-  surfaceHover: '#2a2a2a',
-  text: '#ffffff',             // Light text
-  textSecondary: '#a0a0a0',
-  textMuted: '#666666',
-  textInverse: '#1a1a1a',
-  border: '#333333',
-  success: '#22c55e',
-  danger: '#ef4444',
-  warning: '#f59e0b',
-  info: '#3b82f6',
-  spotAvailable: '#c8e620',
-  spotOccupied: '#ef4444',
-  spotReserved: '#f59e0b',
-  skeleton: '#2a2a2a',
-  skeletonHighlight: '#3a3a3a',
+  primary: "#97d700", // Keep lime green
+  primaryDark: "#7ab800",
+  secondary: "#ffffff", // Invert for contrast
+  background: "#121212", // Dark background
+  surface: "#1e1e1e", // Dark surface
+  surfaceHover: "#2a2a2a",
+  text: "#ffffff", // Light text
+  textSecondary: "#a0a0a0",
+  textMuted: "#666666",
+  textInverse: "#1a1a1a",
+  border: "#333333",
+  success: "#22c55e",
+  danger: "#ef4444",
+  warning: "#f59e0b",
+  info: "#3b82f6",
+  spotAvailable: "#c8e620",
+  spotOccupied: "#ef4444",
+  spotReserved: "#f59e0b",
+  skeleton: "#2a2a2a",
+  skeletonHighlight: "#3a3a3a",
 };
 
 // Default colors (will be overridden by theme)
 let colors = lightColors;
 
 // Helper function to trigger haptic feedback
-const triggerHaptic = (style = 'light') => {
+const triggerHaptic = (style = "light") => {
   const styles = {
     light: Haptics.ImpactFeedbackStyle.Light,
     medium: Haptics.ImpactFeedbackStyle.Medium,
@@ -175,11 +177,11 @@ const triggerHaptic = (style = 'light') => {
 };
 
 // Helper function to show toast
-const showToast = (type, text1, text2 = '') => {
+const showToast = (type, text1, text2 = "") => {
   Toast.show({
     text1,
     text2,
-    position: 'top',
+    position: "top",
     visibilityTime: 3000,
     autoHide: true,
     topOffset: 60,
@@ -203,7 +205,7 @@ const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
           duration: 1000,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
     animation.start();
     return () => animation.stop();
@@ -233,7 +235,13 @@ const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
 // Skeleton Card for Spots/Sessions
 const SkeletonCard = () => (
   <View style={[styles.card, { padding: 16, marginBottom: 12 }]}>
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
       <View>
         <SkeletonBox width={80} height={20} style={{ marginBottom: 8 }} />
         <SkeletonBox width={60} height={14} />
@@ -248,12 +256,24 @@ const EmptyState = ({ icon: Icon, title, subtitle, theme }) => (
   <View style={styles.emptyStateContainer}>
     <Icon size={80} color={theme.textMuted} />
     <Text style={[styles.emptyStateTitle, { color: theme.text }]}>{title}</Text>
-    <Text style={[styles.emptyStateSubtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
+    <Text style={[styles.emptyStateSubtitle, { color: theme.textSecondary }]}>
+      {subtitle}
+    </Text>
   </View>
 );
 
 // Confirmation Modal Component
-const ConfirmModal = ({ visible, title, message, confirmText, cancelText, onConfirm, onCancel, theme, isDanger = false }) => (
+const ConfirmModal = ({
+  visible,
+  title,
+  message,
+  confirmText,
+  cancelText,
+  onConfirm,
+  onCancel,
+  theme,
+  isDanger = false,
+}) => (
   <Modal
     visible={visible}
     transparent={true}
@@ -261,27 +281,54 @@ const ConfirmModal = ({ visible, title, message, confirmText, cancelText, onConf
     onRequestClose={onCancel}
   >
     <View style={styles.confirmModalOverlay}>
-      <View style={[styles.confirmModalContent, { backgroundColor: theme.surface }]}>
-        <Text style={[styles.confirmModalTitle, { color: theme.text }]}>{title}</Text>
-        <Text style={[styles.confirmModalMessage, { color: theme.textSecondary }]}>{message}</Text>
+      <View
+        style={[styles.confirmModalContent, { backgroundColor: theme.surface }]}
+      >
+        <Text style={[styles.confirmModalTitle, { color: theme.text }]}>
+          {title}
+        </Text>
+        <Text
+          style={[styles.confirmModalMessage, { color: theme.textSecondary }]}
+        >
+          {message}
+        </Text>
         <View style={styles.confirmModalButtons}>
           <TouchableOpacity
-            style={[styles.confirmModalBtn, { backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}
+            style={[
+              styles.confirmModalBtn,
+              {
+                backgroundColor: theme.background,
+                borderColor: theme.border,
+                borderWidth: 1,
+              },
+            ]}
             onPress={() => {
-              triggerHaptic('light');
+              triggerHaptic("light");
               onCancel();
             }}
           >
-            <Text style={[styles.confirmModalBtnText, { color: theme.text }]}>{cancelText || 'Cancelar'}</Text>
+            <Text style={[styles.confirmModalBtnText, { color: theme.text }]}>
+              {cancelText || "Cancelar"}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.confirmModalBtn, { backgroundColor: isDanger ? theme.danger : theme.primary }]}
+            style={[
+              styles.confirmModalBtn,
+              { backgroundColor: isDanger ? theme.danger : theme.primary },
+            ]}
             onPress={() => {
-              triggerHaptic('medium');
+              triggerHaptic("medium");
               onConfirm();
             }}
           >
-            <Text style={[styles.confirmModalBtnText, { color: isDanger ? '#fff' : theme.secondary }]}>{confirmText || 'Confirmar'}</Text>
+            <Text
+              style={[
+                styles.confirmModalBtnText,
+                { color: isDanger ? "#fff" : theme.secondary },
+              ]}
+            >
+              {confirmText || "Confirmar"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -294,12 +341,12 @@ const SplashScreen = ({ onFinish, theme }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const logoFade = useRef(new Animated.Value(0)).current;
-  
+
   // Cores do gradiente baseadas no tema
   const isDark = theme === darkColors;
-  const gradientColors = isDark 
-    ? ['#1e1e1e', '#2d2d2d', '#1e1e1e']  // Dark mode
-    : ['#f5f5f5', '#ffffff', '#f5f5f5'];  // Light mode
+  const gradientColors = isDark
+    ? ["#1e1e1e", "#2d2d2d", "#1e1e1e"] // Dark mode
+    : ["#f5f5f5", "#ffffff", "#f5f5f5"]; // Light mode
 
   useEffect(() => {
     // Animate in
@@ -337,16 +384,23 @@ const SplashScreen = ({ onFinish, theme }) => {
 
   return (
     <Animated.View style={[styles.splashContainer, { opacity: fadeAnim }]}>
-      <LinearGradient
-        colors={gradientColors}
-        style={styles.splashGradient}
-      >
-        <StatusBar style={isDark ? 'light' : 'dark'} />
-        <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: logoFade }}>
-          <Text style={[styles.splashTitle, { color: theme.primary }]}>TugaPark</Text>
-          <Text style={[styles.splashSubtitle, { color: theme.textSecondary }]}>Estacionamento inteligente</Text>
+      <LinearGradient colors={gradientColors} style={styles.splashGradient}>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <Animated.View
+          style={{ transform: [{ scale: scaleAnim }], opacity: logoFade }}
+        >
+          <Text style={[styles.splashTitle, { color: theme.primary }]}>
+            TugaPark
+          </Text>
+          <Text style={[styles.splashSubtitle, { color: theme.textSecondary }]}>
+            Estacionamento inteligente
+          </Text>
         </Animated.View>
-        <ActivityIndicator color={theme.primary} size="large" style={{ marginTop: 40 }} />
+        <ActivityIndicator
+          color={theme.primary}
+          size="large"
+          style={{ marginTop: 40 }}
+        />
       </LinearGradient>
     </Animated.View>
   );
@@ -355,12 +409,12 @@ const SplashScreen = ({ onFinish, theme }) => {
 // API Client
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
   timeout: 10000,
 });
 
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('token');
+  const token = await AsyncStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -369,84 +423,111 @@ api.interceptors.request.use(async (config) => {
 
 // Login Screen Component
 const LoginScreen = ({ onLogin, theme }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSubmit = async () => {
-    triggerHaptic('medium');
-    
+    triggerHaptic("medium");
+
     if (!email.trim() || !password.trim()) {
-      setError('Preencha email e password');
+      showToast("error", "Error", "Please fill in email and password");
       return;
     }
-    
+
     if (isRegister && !name.trim()) {
-      setError('Preencha o nome');
+      setError("Please fill in your name");
       return;
     }
 
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       let response;
       if (isRegister) {
         // Register with email, password, name
-        response = await api.post('/api/auth/register', {
+        response = await api.post("/api/auth/register", {
           email: email.trim().toLowerCase(),
           password: password,
           full_name: name.trim(),
         });
       } else {
         // Login with email (identifier) + password
-        response = await api.post('/api/auth/login', {
+        response = await api.post("/api/auth/login", {
           identifier: email.trim().toLowerCase(),
           password: password,
         });
       }
 
-      await AsyncStorage.setItem('token', response.data.token);
-      await AsyncStorage.setItem('user', JSON.stringify(response.data.user));
-      showToast('success', isRegister ? 'Conta criada!' : 'Bem-vindo!', `Olá, ${response.data.user.name}`);
+      await AsyncStorage.setItem("token", response.data.token);
+      await AsyncStorage.setItem("user", JSON.stringify(response.data.user));
+      showToast(
+        "success",
+        isRegister ? "Account created!" : "Welcome!",
+        `Hello, ${response.data.user.name}`,
+      );
       onLogin(response.data.user);
     } catch (e) {
-      const errorMsg = e.response?.data?.detail || e.message || 'Erro ao conectar';
+      const errorMsg =
+        e.response?.data?.detail || e.message || "Connection error";
       setError(errorMsg);
-      showToast('error', 'Erro', errorMsg);
+      showToast("error", "Error", errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar style={theme === darkColors ? 'light' : 'dark'} />
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <StatusBar style={theme === darkColors ? "light" : "dark"} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.primary }]}>TugaPark</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Estacionamento inteligente</Text>
+            <Text style={[styles.title, { color: theme.primary }]}>
+              TugaPark
+            </Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+              Smart Parking
+            </Text>
           </View>
 
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>{isRegister ? 'Criar Conta' : 'Entrar'}</Text>
-            
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
+            <Text style={[styles.cardTitle, { color: theme.text }]}>
+              {isRegister ? "Create Account" : "Log In"}
+            </Text>
+
             {isRegister && (
               <>
-                <Text style={[styles.label, { color: theme.textSecondary }]}>Nome completo</Text>
+                <Text style={[styles.label, { color: theme.textSecondary }]}>
+                  Full Name
+                </Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                  placeholder="João Silva"
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: theme.background,
+                      borderColor: theme.border,
+                      color: theme.text,
+                    },
+                  ]}
+                  placeholder="Full Name"
                   placeholderTextColor={theme.textMuted}
                   value={name}
                   onChangeText={setName}
@@ -455,10 +536,19 @@ const LoginScreen = ({ onLogin, theme }) => {
               </>
             )}
 
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Email</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>
+              Email
+            </Text>
             <TextInput
-              style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="email@exemplo.com"
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="email@example.com"
               placeholderTextColor={theme.textMuted}
               value={email}
               onChangeText={setEmail}
@@ -467,9 +557,18 @@ const LoginScreen = ({ onLogin, theme }) => {
               autoComplete="email"
             />
 
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Password</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>
+              Password
+            </Text>
             <TextInput
-              style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="••••••••"
               placeholderTextColor={theme.textMuted}
               value={password}
@@ -481,7 +580,11 @@ const LoginScreen = ({ onLogin, theme }) => {
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <TouchableOpacity
-              style={[styles.button, { backgroundColor: theme.primary }, loading && styles.buttonDisabled]}
+              style={[
+                styles.button,
+                { backgroundColor: theme.primary },
+                loading && styles.buttonDisabled,
+              ]}
               onPress={handleSubmit}
               disabled={loading}
             >
@@ -489,7 +592,7 @@ const LoginScreen = ({ onLogin, theme }) => {
                 <ActivityIndicator color={theme.secondary} />
               ) : (
                 <Text style={[styles.buttonText, { color: theme.secondary }]}>
-                  {isRegister ? 'Registar' : 'Entrar'}
+                  {isRegister ? "Register" : "Log In"}
                 </Text>
               )}
             </TouchableOpacity>
@@ -497,19 +600,30 @@ const LoginScreen = ({ onLogin, theme }) => {
             <TouchableOpacity
               style={styles.switchButton}
               onPress={() => {
-                triggerHaptic('light');
+                triggerHaptic("light");
                 setIsRegister(!isRegister);
-                setError('');
+                setError("");
               }}
             >
               <Text style={[styles.switchText, { color: theme.textSecondary }]}>
-                {isRegister ? 'Já tem conta? Entrar' : 'Não tem conta? Registar'}
+                {isRegister
+                  ? "Already have an account? Log In"
+                  : "Don't have an account? Register"}
               </Text>
             </TouchableOpacity>
-            
+
             {isRegister && (
-              <Text style={[{ color: theme.textMuted, fontSize: 12, textAlign: 'center', marginTop: 12 }]}>
-                Após criar conta, adicione os seus veículos nas Definições
+              <Text
+                style={[
+                  {
+                    color: theme.textMuted,
+                    fontSize: 12,
+                    textAlign: "center",
+                    marginTop: 12,
+                  },
+                ]}
+              >
+                After creating your account, add your vehicles in Settings
               </Text>
             )}
           </View>
@@ -520,7 +634,7 @@ const LoginScreen = ({ onLogin, theme }) => {
 };
 
 // Car Icon for Vehicles
-const CarIcon = ({ size = 24, color = '#666666' }) => (
+const CarIcon = ({ size = 24, color = "#666666" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path
       fill={color}
@@ -530,7 +644,7 @@ const CarIcon = ({ size = 24, color = '#666666' }) => (
 );
 
 // Credit Card Icon
-const CreditCardIcon = ({ size = 24, color = '#666666' }) => (
+const CreditCardIcon = ({ size = 24, color = "#666666" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path
       fill={color}
@@ -540,147 +654,181 @@ const CreditCardIcon = ({ size = 24, color = '#666666' }) => (
 );
 
 // Plus Icon
-const PlusIcon = ({ size = 24, color = '#666666' }) => (
+const PlusIcon = ({ size = 24, color = "#666666" }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path
-      fill={color}
-      d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
-    />
+    <Path fill={color} d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
   </Svg>
 );
 
 // Settings Tab Component with Vehicles and Cards Management
-const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLogout, onSetupChange }) => {
+const SettingsTab = ({
+  user,
+  theme,
+  isDarkMode,
+  setIsDarkMode,
+  parkingRate,
+  onLogout,
+  onSetupChange,
+}) => {
   // Vehicles state
   const [vehicles, setVehicles] = useState([]);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
-  const [vehicleForm, setVehicleForm] = useState({ plate: '', brand: '', model: '', color: '' });
+  const [vehicleForm, setVehicleForm] = useState({
+    plate: "",
+    brand: "",
+    model: "",
+    color: "",
+  });
   const [vehicleLoading, setVehicleLoading] = useState(false);
-  
+
   // Payment methods state
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [showCardForm, setShowCardForm] = useState(false);
   const [cardForm, setCardForm] = useState({
-    card_type: 'visa',
-    card_number: '',
-    card_holder_name: '',
-    expiry_month: '',
-    expiry_year: '',
+    card_type: "visa",
+    card_number: "",
+    card_holder_name: "",
+    expiry_month: "",
+    expiry_year: "",
   });
   const [cardLoading, setCardLoading] = useState(false);
-  
+
   // Loading state
   const [loading, setLoading] = useState(true);
-  
+
   // Load data on mount
   useEffect(() => {
     loadUserData();
   }, []);
-  
+
   const loadUserData = async () => {
     setLoading(true);
     try {
       const [vehiclesRes, methodsRes] = await Promise.all([
-        api.get('/api/user/vehicles'),
-        api.get('/api/user/payment-methods'),
+        api.get("/api/user/vehicles"),
+        api.get("/api/user/payment-methods"),
       ]);
       setVehicles(vehiclesRes.data.vehicles || []);
       setPaymentMethods(methodsRes.data.payment_methods || []);
     } catch (e) {
-      console.log('Error loading user data:', e.message);
+      console.log("Error loading user data:", e.message);
     } finally {
       setLoading(false);
     }
   };
-  
+
   // Add vehicle
   const addVehicle = async () => {
     if (!vehicleForm.plate.trim()) {
-      showToast('error', 'Erro', 'Indique a matrícula');
+      showToast("error", "Error", "Please enter the license plate");
       return;
     }
-    
+
     setVehicleLoading(true);
     try {
-      await api.post('/api/user/vehicles', vehicleForm);
-      showToast('success', 'Veículo adicionado!', vehicleForm.plate.toUpperCase());
-      setVehicleForm({ plate: '', brand: '', model: '', color: '' });
+      await api.post("/api/user/vehicles", vehicleForm);
+      showToast("success", "Vehicle added!", `${vehicleForm.plate} registered`);
+      setVehicleForm({ plate: "", brand: "", model: "", color: "" });
       setShowVehicleForm(false);
       loadUserData();
       if (onSetupChange) onSetupChange();
     } catch (e) {
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao adicionar veículo');
+      showToast(
+        "error",
+        "Error adding vehicle",
+        e.response?.data?.detail || "Failed to add vehicle",
+      );
     } finally {
       setVehicleLoading(false);
     }
   };
-  
+
   // Remove vehicle
   const removeVehicle = async (id, plate) => {
     try {
       await api.delete(`/api/user/vehicles/${id}`);
-      showToast('success', 'Veículo removido', plate);
+      showToast("success", "Vehicle removed", `Vehicle ${plate} removed`);
       loadUserData();
       if (onSetupChange) onSetupChange();
     } catch (e) {
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao remover veículo');
+      showToast(
+        "error",
+        "Error removing vehicle",
+        e.response?.data?.detail || "Failed to remove vehicle",
+      );
     }
   };
-  
+
   // Set vehicle as primary
   const setPrimaryVehicle = async (plate) => {
     try {
       await api.put(`/api/mobile/vehicles/${plate}/set-primary`);
-      showToast('success', 'Veículo principal', `${plate} é agora o veículo principal`);
+      showToast(
+        "success",
+        "Primary vehicle",
+        `${plate} is now the primary vehicle`,
+      );
       loadUserData();
       if (onSetupChange) onSetupChange();
     } catch (e) {
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao definir veículo principal');
+      showToast(
+        "error",
+        "Error",
+        e.response?.data?.detail || "Failed to set primary vehicle",
+      );
     }
   };
-  
+
   // Add payment card
   const addCard = async () => {
     if (!cardForm.card_number.trim() || !cardForm.card_holder_name.trim()) {
-      showToast('error', 'Erro', 'Preencha todos os campos obrigatórios');
+      showToast("error", "Error", "Fill in all required fields");
       return;
     }
-    
+
     setCardLoading(true);
     try {
-      await api.post('/api/user/payment-methods', {
+      await api.post("/api/user/payment-methods", {
         ...cardForm,
         expiry_month: parseInt(cardForm.expiry_month) || 12,
         expiry_year: parseInt(cardForm.expiry_year) || 2025,
         is_default: true,
       });
-      showToast('success', 'Cartão adicionado!', '');
+      showToast("success", "Card added!", "Payment method added");
       setCardForm({
-        card_type: 'visa',
-        card_number: '',
-        card_holder_name: '',
-        expiry_month: '',
-        expiry_year: '',
+        card_type: "visa",
+        card_number: "",
+        card_holder_name: "",
+        expiry_month: "",
+        expiry_year: "",
       });
       setShowCardForm(false);
       loadUserData();
       if (onSetupChange) onSetupChange();
     } catch (e) {
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao adicionar cartão');
+      showToast(
+        "error",
+        "Error adding card",
+        e.response?.data?.detail || "Failed to add card",
+      );
     } finally {
       setCardLoading(false);
     }
   };
-  
+
   // Remove payment card
   const removeCard = async (id) => {
     try {
       await api.delete(`/api/user/payment-methods/${id}`);
-      showToast('success', 'Cartão removido', '');
+      showToast("success", "Card removed", "Payment method removed");
       loadUserData();
       if (onSetupChange) onSetupChange();
     } catch (e) {
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao remover cartão');
+      showToast(
+        "error",
+        "Error removing card",
+        e.response?.data?.detail || "Failed to remove card",
+      );
     }
   };
 
@@ -688,84 +836,188 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
     <>
       {/* User Info */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Conta</Text>
-        <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Nome</Text>
-          <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.name}</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          Account
+        </Text>
+        <View
+          style={[
+            styles.settingsCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>
+            Name
+          </Text>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>
+            {user?.name}
+          </Text>
         </View>
-        <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Email</Text>
-          <Text style={[styles.settingsValue, { color: theme.text }]}>{user?.email}</Text>
+        <View
+          style={[
+            styles.settingsCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>
+            Email
+          </Text>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>
+            {user?.email}
+          </Text>
         </View>
-        <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>Tarifa</Text>
-          <Text style={[styles.settingsValue, { color: theme.text }]}>€{parkingRate.toFixed(2)}/hora</Text>
+        <View
+          style={[
+            styles.settingsCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.settingsLabel, { color: theme.textSecondary }]}>
+            Rate
+          </Text>
+          <Text style={[styles.settingsValue, { color: theme.text }]}>
+            €{parkingRate.toFixed(2)}/hour
+          </Text>
         </View>
       </View>
-      
+
       {/* Vehicles Section */}
       <View style={styles.section}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Meus Veículos</Text>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: theme.text, marginBottom: 0 },
+            ]}
+          >
+            My Vehicles
+          </Text>
           <TouchableOpacity
             style={[styles.smallAddButton, { backgroundColor: theme.primary }]}
             onPress={() => {
-              triggerHaptic('light');
+              triggerHaptic("light");
               setShowVehicleForm(!showVehicleForm);
             }}
           >
             <PlusIcon size={18} color={theme.secondary} />
-            <Text style={[{ color: theme.secondary, fontSize: 12, fontWeight: '600', marginLeft: 4 }]}>
-              Adicionar
+            <Text
+              style={[
+                {
+                  color: theme.secondary,
+                  fontSize: 12,
+                  fontWeight: "600",
+                  marginLeft: 4,
+                },
+              ]}
+            >
+              Add
             </Text>
           </TouchableOpacity>
         </View>
-        
+
         {/* Add Vehicle Form */}
         {showVehicleForm && (
-          <View style={[styles.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View
+            style={[
+              styles.formCard,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
             <TextInput
-              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="Matrícula *"
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="License Plate *"
               placeholderTextColor={theme.textMuted}
               value={vehicleForm.plate}
-              onChangeText={(t) => setVehicleForm({ ...vehicleForm, plate: t.toUpperCase() })}
+              onChangeText={(t) =>
+                setVehicleForm({ ...vehicleForm, plate: t.toUpperCase() })
+              }
               autoCapitalize="characters"
             />
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
               <TextInput
-                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                placeholder="Marca"
+                style={[
+                  styles.formInput,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                    color: theme.text,
+                  },
+                ]}
+                placeholder="Brand"
                 placeholderTextColor={theme.textMuted}
                 value={vehicleForm.brand}
-                onChangeText={(t) => setVehicleForm({ ...vehicleForm, brand: t })}
+                onChangeText={(t) =>
+                  setVehicleForm({ ...vehicleForm, brand: t })
+                }
               />
               <TextInput
-                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                placeholder="Modelo"
+                style={[
+                  styles.formInput,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                    color: theme.text,
+                  },
+                ]}
+                placeholder="Model"
                 placeholderTextColor={theme.textMuted}
                 value={vehicleForm.model}
-                onChangeText={(t) => setVehicleForm({ ...vehicleForm, model: t })}
+                onChangeText={(t) =>
+                  setVehicleForm({ ...vehicleForm, model: t })
+                }
               />
             </View>
             <TextInput
-              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="Cor"
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="Color"
               placeholderTextColor={theme.textMuted}
               value={vehicleForm.color}
               onChangeText={(t) => setVehicleForm({ ...vehicleForm, color: t })}
             />
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
               <TouchableOpacity
-                style={[styles.formButton, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}
+                style={[
+                  styles.formButton,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                    borderWidth: 1,
+                  },
+                ]}
                 onPress={() => setShowVehicleForm(false)}
               >
-                <Text style={{ color: theme.text }}>Cancelar</Text>
+                <Text style={{ color: theme.text }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.formButton, { flex: 1, backgroundColor: theme.primary }]}
+                style={[
+                  styles.formButton,
+                  { flex: 1, backgroundColor: theme.primary },
+                ]}
                 onPress={() => {
-                  triggerHaptic('medium');
+                  triggerHaptic("medium");
                   addVehicle();
                 }}
                 disabled={vehicleLoading}
@@ -773,121 +1025,250 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
                 {vehicleLoading ? (
                   <ActivityIndicator size="small" color={theme.secondary} />
                 ) : (
-                  <Text style={{ color: theme.secondary, fontWeight: '600' }}>Adicionar</Text>
+                  <Text style={{ color: theme.secondary, fontWeight: "600" }}>
+                    Add
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         )}
-        
+
         {/* Vehicles List */}
         {loading ? (
           <SkeletonCard />
         ) : vehicles.length === 0 ? (
-          <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border, alignItems: 'center', paddingVertical: 24 }]}>
+          <View
+            style={[
+              styles.settingsCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                alignItems: "center",
+                paddingVertical: 24,
+              },
+            ]}
+          >
             <CarIcon size={40} color={theme.textMuted} />
-            <Text style={[{ color: theme.textSecondary, marginTop: 8, textAlign: 'center' }]}>
-              Nenhum veículo registado
+            <Text
+              style={[
+                {
+                  color: theme.textSecondary,
+                  marginTop: 8,
+                  textAlign: "center",
+                },
+              ]}
+            >
+              No vehicles registered
             </Text>
           </View>
         ) : (
           vehicles.map((v) => (
-            <View key={v.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: v.is_primary ? theme.primary : theme.border, borderWidth: v.is_primary ? 2 : 1 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <View style={{ 
-                  width: 40, 
-                  height: 40, 
-                  borderRadius: 20, 
-                  backgroundColor: v.is_primary ? theme.primary + '20' : theme.background,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <CarIcon size={22} color={v.is_primary ? theme.primary : theme.textSecondary} />
+            <View
+              key={v.id}
+              style={[
+                styles.vehicleCard,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: v.is_primary ? theme.primary : theme.border,
+                  borderWidth: v.is_primary ? 2 : 1,
+                },
+              ]}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: v.is_primary
+                      ? theme.primary + "20"
+                      : theme.background,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <CarIcon
+                    size={22}
+                    color={v.is_primary ? theme.primary : theme.textSecondary}
+                  />
                 </View>
                 <View style={{ marginLeft: 12, flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={[styles.vehiclePlate, { color: theme.text }]}>{v.plate}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Text style={[styles.vehiclePlate, { color: theme.text }]}>
+                      {v.plate}
+                    </Text>
                     {v.is_primary && (
-                      <View style={{
-                        backgroundColor: theme.primary,
-                        paddingHorizontal: 6,
-                        paddingVertical: 2,
-                        borderRadius: 4,
-                        marginLeft: 8,
-                      }}>
-                        <Text style={{ fontSize: 9, fontWeight: '600', color: theme.secondary }}>PRINCIPAL</Text>
+                      <View
+                        style={{
+                          backgroundColor: theme.primary,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 4,
+                          marginLeft: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 9,
+                            fontWeight: "600",
+                            color: theme.secondary,
+                          }}
+                        >
+                          PRIMARY
+                        </Text>
                       </View>
                     )}
                   </View>
                   <Text style={[{ color: theme.textSecondary, fontSize: 12 }]}>
-                    {[v.brand, v.model, v.color].filter(Boolean).join(' • ') || 'Sem detalhes'}
+                    {[v.brand, v.model, v.color].filter(Boolean).join(" • ") ||
+                      "No details"}
                   </Text>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
                 {!v.is_primary && (
                   <TouchableOpacity
-                    style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                    style={[
+                      styles.smallButton,
+                      { backgroundColor: theme.primary },
+                    ]}
                     onPress={() => {
-                      triggerHaptic('light');
+                      triggerHaptic("light");
                       setPrimaryVehicle(v.plate);
                     }}
                   >
-                    <Text style={{ color: theme.secondary, fontSize: 11, fontWeight: '600' }}>Principal</Text>
+                    <Text
+                      style={{
+                        color: theme.secondary,
+                        fontSize: 11,
+                        fontWeight: "600",
+                      }}
+                    >
+                      Primary
+                    </Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  style={[styles.deleteButton, { backgroundColor: theme.danger }]}
+                  style={[
+                    styles.deleteButton,
+                    { backgroundColor: theme.danger },
+                  ]}
                   onPress={() => {
-                    triggerHaptic('medium');
+                    triggerHaptic("medium");
                     removeVehicle(v.id, v.plate);
                   }}
                 >
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>Remover</Text>
+                  <Text
+                    style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}
+                  >
+                    Remove
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
           ))
         )}
       </View>
-      
+
       {/* Payment Methods Section */}
       <View style={styles.section}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Método de Pagamento</Text>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: theme.text, marginBottom: 0 },
+            ]}
+          >
+            Payment Method
+          </Text>
           {paymentMethods.length === 0 && (
             <TouchableOpacity
-              style={[styles.smallAddButton, { backgroundColor: theme.primary }]}
+              style={[
+                styles.smallAddButton,
+                { backgroundColor: theme.primary },
+              ]}
               onPress={() => {
-                triggerHaptic('light');
+                triggerHaptic("light");
                 setShowCardForm(!showCardForm);
               }}
             >
               <PlusIcon size={18} color={theme.secondary} />
-              <Text style={[{ color: theme.secondary, fontSize: 12, fontWeight: '600', marginLeft: 4 }]}>
-                Adicionar
+              <Text
+                style={[
+                  {
+                    color: theme.secondary,
+                    fontSize: 12,
+                    fontWeight: "600",
+                    marginLeft: 4,
+                  },
+                ]}
+              >
+                Add
               </Text>
             </TouchableOpacity>
           )}
         </View>
-        
+
         {/* Add Card Form */}
         {showCardForm && (
-          <View style={[styles.formCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, paddingVertical: 0 }]}>
-              <Text style={{ color: theme.textMuted, fontSize: 12, marginBottom: 4, marginTop: 8 }}>Tipo de Cartão</Text>
-              <View style={{ flexDirection: 'row', paddingBottom: 8 }}>
-                {['visa', 'mastercard', 'amex'].map((type) => (
+          <View
+            style={[
+              styles.formCard,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
+            <View
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  paddingVertical: 0,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: theme.textMuted,
+                  fontSize: 12,
+                  marginBottom: 4,
+                  marginTop: 8,
+                }}
+              >
+                Card Type
+              </Text>
+              <View style={{ flexDirection: "row", paddingBottom: 8 }}>
+                {["visa", "mastercard", "amex"].map((type) => (
                   <TouchableOpacity
                     key={type}
                     style={[
                       styles.cardTypeButton,
                       { borderColor: theme.border },
-                      cardForm.card_type === type && { borderColor: theme.primary, backgroundColor: theme.primary + '20' }
+                      cardForm.card_type === type && {
+                        borderColor: theme.primary,
+                        backgroundColor: theme.primary + "20",
+                      },
                     ]}
-                    onPress={() => setCardForm({ ...cardForm, card_type: type })}
+                    onPress={() =>
+                      setCardForm({ ...cardForm, card_type: type })
+                    }
                   >
-                    <Text style={[{ color: theme.text, fontSize: 12 }, cardForm.card_type === type && { fontWeight: '600' }]}>
+                    <Text
+                      style={[
+                        { color: theme.text, fontSize: 12 },
+                        cardForm.card_type === type && { fontWeight: "600" },
+                      ]}
+                    >
                       {type.charAt(0).toUpperCase() + type.slice(1)}
                     </Text>
                   </TouchableOpacity>
@@ -895,52 +1276,99 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
               </View>
             </View>
             <TextInput
-              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="Número do Cartão *"
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="Card Number *"
               placeholderTextColor={theme.textMuted}
               value={cardForm.card_number}
               onChangeText={(t) => setCardForm({ ...cardForm, card_number: t })}
               keyboardType="number-pad"
             />
             <TextInput
-              style={[styles.formInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-              placeholder="Nome no Cartão *"
+              style={[
+                styles.formInput,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="Cardholder Name *"
               placeholderTextColor={theme.textMuted}
               value={cardForm.card_holder_name}
-              onChangeText={(t) => setCardForm({ ...cardForm, card_holder_name: t.toUpperCase() })}
+              onChangeText={(t) =>
+                setCardForm({ ...cardForm, card_holder_name: t.toUpperCase() })
+              }
               autoCapitalize="characters"
             />
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
               <TextInput
-                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                placeholder="Mês (MM)"
+                style={[
+                  styles.formInput,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                    color: theme.text,
+                  },
+                ]}
+                placeholder="Month (MM)"
                 placeholderTextColor={theme.textMuted}
                 value={cardForm.expiry_month}
-                onChangeText={(t) => setCardForm({ ...cardForm, expiry_month: t })}
+                onChangeText={(t) =>
+                  setCardForm({ ...cardForm, expiry_month: t })
+                }
                 keyboardType="number-pad"
                 maxLength={2}
               />
               <TextInput
-                style={[styles.formInput, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                placeholder="Ano (AAAA)"
+                style={[
+                  styles.formInput,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                    color: theme.text,
+                  },
+                ]}
+                placeholder="Year (YYYY)"
                 placeholderTextColor={theme.textMuted}
                 value={cardForm.expiry_year}
-                onChangeText={(t) => setCardForm({ ...cardForm, expiry_year: t })}
+                onChangeText={(t) =>
+                  setCardForm({ ...cardForm, expiry_year: t })
+                }
                 keyboardType="number-pad"
                 maxLength={4}
               />
             </View>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
               <TouchableOpacity
-                style={[styles.formButton, { flex: 1, backgroundColor: theme.background, borderColor: theme.border, borderWidth: 1 }]}
+                style={[
+                  styles.formButton,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                    borderWidth: 1,
+                  },
+                ]}
                 onPress={() => setShowCardForm(false)}
               >
-                <Text style={{ color: theme.text }}>Cancelar</Text>
+                <Text style={{ color: theme.text }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.formButton, { flex: 1, backgroundColor: theme.primary }]}
+                style={[
+                  styles.formButton,
+                  { flex: 1, backgroundColor: theme.primary },
+                ]}
                 onPress={() => {
-                  triggerHaptic('medium');
+                  triggerHaptic("medium");
                   addCard();
                 }}
                 disabled={cardLoading}
@@ -948,89 +1376,148 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
                 {cardLoading ? (
                   <ActivityIndicator size="small" color={theme.secondary} />
                 ) : (
-                  <Text style={{ color: theme.secondary, fontWeight: '600' }}>Adicionar</Text>
+                  <Text style={{ color: theme.secondary, fontWeight: "600" }}>
+                    Add
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         )}
-        
+
         {/* Cards List */}
         {loading ? (
           <SkeletonCard />
         ) : paymentMethods.length === 0 ? (
-          <View style={[styles.settingsCard, { backgroundColor: theme.surface, borderColor: theme.border, alignItems: 'center', paddingVertical: 24 }]}>
+          <View
+            style={[
+              styles.settingsCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                alignItems: "center",
+                paddingVertical: 24,
+              },
+            ]}
+          >
             <CreditCardIcon size={40} color={theme.textMuted} />
-            <Text style={[{ color: theme.textSecondary, marginTop: 8, textAlign: 'center' }]}>
-              Nenhum cartão registado
+            <Text
+              style={[
+                {
+                  color: theme.textSecondary,
+                  marginTop: 8,
+                  textAlign: "center",
+                },
+              ]}
+            >
+              No cards registered
             </Text>
-            <Text style={[{ color: theme.textMuted, fontSize: 12, marginTop: 4, textAlign: 'center' }]}>
-              Adicione um cartão para pagamento automático na saída
+            <Text
+              style={[
+                {
+                  color: theme.textMuted,
+                  fontSize: 12,
+                  marginTop: 4,
+                  textAlign: "center",
+                },
+              ]}
+            >
+              Add a card for automatic payment on exit
             </Text>
           </View>
         ) : (
           paymentMethods.slice(0, 1).map((pm) => (
-            <View key={pm.id} style={[styles.vehicleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <View
+              key={pm.id}
+              style={[
+                styles.vehicleCard,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+              >
                 <CreditCardIcon size={24} color={theme.primary} />
                 <View style={{ marginLeft: 12, flex: 1 }}>
                   <Text style={[styles.vehiclePlate, { color: theme.text }]}>
                     {pm.card_type?.toUpperCase()} •••• {pm.card_last_four}
                   </Text>
                   <Text style={[{ color: theme.textSecondary, fontSize: 12 }]}>
-                    {pm.card_holder_name} • Exp: {pm.expiry_month}/{pm.expiry_year}
+                    {pm.card_holder_name} • Exp: {pm.expiry_month}/
+                    {pm.expiry_year}
                   </Text>
                 </View>
               </View>
               <TouchableOpacity
                 style={[styles.deleteButton, { backgroundColor: theme.danger }]}
                 onPress={() => {
-                  triggerHaptic('medium');
+                  triggerHaptic("medium");
                   removeCard(pm.id);
                 }}
               >
-                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Remover</Text>
+                <Text
+                  style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}
+                >
+                  Remove
+                </Text>
               </TouchableOpacity>
             </View>
           ))
         )}
       </View>
-      
+
       {/* Settings */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Definições</Text>
-        
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          Settings
+        </Text>
+
         {/* Dark Mode Toggle */}
-        <View style={[styles.settingsCard, styles.settingsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View
+          style={[
+            styles.settingsCard,
+            styles.settingsRow,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
           <View style={styles.settingsRowLeft}>
             <MoonIcon size={24} color={theme.textSecondary} />
             <View style={{ marginLeft: 12 }}>
-              <Text style={[styles.settingsValue, { color: theme.text }]}>Modo Escuro</Text>
-              <Text style={[styles.settingsLabel, { color: theme.textSecondary, marginTop: 2 }]}>
-                {isDarkMode ? 'Ativado' : 'Desativado'}
+              <Text style={[styles.settingsValue, { color: theme.text }]}>
+                Dark Mode
+              </Text>
+              <Text
+                style={[
+                  styles.settingsLabel,
+                  { color: theme.textSecondary, marginTop: 2 },
+                ]}
+              >
+                {isDarkMode ? "On" : "Off"}
               </Text>
             </View>
           </View>
           <Switch
             value={isDarkMode}
             onValueChange={(value) => {
-              triggerHaptic('light');
+              triggerHaptic("light");
               setIsDarkMode(value);
             }}
             trackColor={{ false: theme.border, true: theme.primary }}
-            thumbColor={isDarkMode ? theme.secondary : '#f4f3f4'}
+            thumbColor={isDarkMode ? theme.secondary : "#f4f3f4"}
           />
         </View>
-        
+
         {/* Logout Button */}
         <TouchableOpacity
           style={[styles.logoutButton, { backgroundColor: theme.danger }]}
           onPress={() => {
-            triggerHaptic('medium');
+            triggerHaptic("medium");
             onLogout();
           }}
         >
-          <Text style={[styles.logoutButtonText, { color: theme.textInverse }]}>Terminar Sessão</Text>
+          <Text style={[styles.logoutButtonText, { color: theme.textInverse }]}>
+            Log Out
+          </Text>
         </TouchableOpacity>
       </View>
     </>
@@ -1038,34 +1525,43 @@ const SettingsTab = ({ user, theme, isDarkMode, setIsDarkMode, parkingRate, onLo
 };
 
 // Home Screen Component
-const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometricsEnabled, setBiometricsEnabled }) => {
+const HomeScreen = ({
+  user,
+  onLogout,
+  theme,
+  isDarkMode,
+  setIsDarkMode,
+  biometricsEnabled,
+  setBiometricsEnabled,
+}) => {
   const [spots, setSpots] = useState({});
   const [sessions, setSessions] = useState([]);
   const [reservations, setReservations] = useState([]);
-  const [parkingRate, setParkingRate] = useState(1.50); // Default, will be fetched
+  const [parkingRate, setParkingRate] = useState(1.5); // Default, will be fetched
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('home');
-  
+  const [activeTab, setActiveTab] = useState("home");
+
   // User setup state (vehicles and cards)
   const [userVehicles, setUserVehicles] = useState([]);
   const [userCards, setUserCards] = useState([]);
-  
+
   // Reservation modal state
   const [showReserveModal, setShowReserveModal] = useState(false);
   const [selectedSpot, setSelectedSpot] = useState(null);
   const [reserveForToday, setReserveForToday] = useState(true); // true = today, false = tomorrow
-  const [selectedVehicleForReservation, setSelectedVehicleForReservation] = useState(null);
-  
+  const [selectedVehicleForReservation, setSelectedVehicleForReservation] =
+    useState(null);
+
   // Confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmSpot, setConfirmSpot] = useState(null);
   const [spotReservationStatus, setSpotReservationStatus] = useState({}); // { today_reserved: bool, tomorrow_reserved: bool }
-  
+
   // Animation for reservation modal slide up
   const reserveModalSlideAnim = useRef(new Animated.Value(300)).current;
-  
+
   // Trigger slide animation when modal visibility changes
   useEffect(() => {
     if (showReserveModal) {
@@ -1080,10 +1576,10 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
       reserveModalSlideAnim.setValue(300);
     }
   }, [showReserveModal]);
-  
+
   // Timer state for active sessions
   const [currentTime, setCurrentTime] = useState(Date.now());
-  
+
   // Update timer every second
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1091,7 +1587,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  
+
   // Calculate elapsed time for a session
   const getElapsedTime = (entryTime) => {
     const entry = new Date(entryTime).getTime();
@@ -1104,96 +1600,110 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
     }
     return `${minutes}m ${seconds}s`;
   };
-  
+
   // Calculate current cost using rate from backend
   const getCurrentCost = (entryTime) => {
     const entry = new Date(entryTime).getTime();
     const elapsed = (currentTime - entry) / 1000 / 60 / 60; // hours
     return (elapsed * parkingRate).toFixed(2);
   };
-  
+
   // Get alerts for reservations and payment deadlines
   const getAlerts = () => {
     const alerts = [];
-    
+
     // Show reminder for today's reservations
-    const todayReservations = reservations.filter(res => {
-      const today = new Date().toISOString().split('T')[0];
+    const todayReservations = reservations.filter((res) => {
+      const today = new Date().toISOString().split("T")[0];
       return res.reservation_date === today || !res.reservation_date;
     });
     if (todayReservations.length > 0) {
       alerts.push({
-        type: 'warning',
-        icon: 'clock',
-        title: 'Reservas para hoje',
-        message: `${todayReservations.length} reserva(s) ativa(s). Multa de 20€ se não usar!`,
+        type: "warning",
+        icon: "clock",
+        title: "Reservations for today",
+        message: `${todayReservations.length} active reservation(s). €20 fine if not used!`,
       });
     }
-    
+
     // Check payment deadlines
-    sessions.forEach(session => {
+    sessions.forEach((session) => {
       if (session.payment_deadline) {
         const deadline = new Date(session.payment_deadline).getTime();
         const timeLeft = (deadline - currentTime) / 1000 / 60; // minutes
         if (timeLeft > 0 && timeLeft < 10) {
           alerts.push({
-            type: 'danger',
-            icon: 'danger',
-            title: 'Prazo de saída',
-            message: `Tem ${Math.floor(timeLeft)} min para sair!`,
+            type: "danger",
+            icon: "danger",
+            title: "Exit deadline",
+            message: `You have ${Math.floor(timeLeft)} min to exit!`,
           });
         }
       }
     });
-    
+
     // Check pending payments
-    const pendingPayments = sessions.filter(s => s.status === 'open' && s.amount_due > 0);
+    const pendingPayments = sessions.filter(
+      (s) => s.status === "open" && s.amount_due > 0,
+    );
     if (pendingPayments.length > 0) {
       alerts.push({
-        type: 'info',
-        icon: 'payment',
-        title: 'Pagamento pendente',
-        message: `${pendingPayments.length} sessão(ões) a aguardar pagamento`,
+        type: "info",
+        icon: "payment",
+        title: "Pending payment",
+        message: `${pendingPayments.length} session(s) awaiting payment`,
       });
     }
-    
+
     return alerts;
   };
-  
+
   const alerts = getAlerts();
-  
+
   // Check if user has completed onboarding (has vehicles and cards)
   const hasCompletedSetup = userVehicles.length > 0 && userCards.length > 0;
   const needsVehicle = userVehicles.length === 0;
   const needsCard = userVehicles.length > 0 && userCards.length === 0;
-  
+
   // Day-based reservation - no duration options needed
 
   const loadData = async () => {
     try {
-      const [spotsRes, sessionsRes, reservationsRes, configRes, vehiclesRes, cardsRes] = await Promise.all([
-        api.get('/parking'),
-        api.get('/api/mobile/sessions'),
-        api.get('/api/mobile/reservations'),
-        api.get('/api/config'),
-        api.get('/api/user/vehicles'),
-        api.get('/api/user/payment-methods'),
+      const [
+        spotsRes,
+        sessionsRes,
+        reservationsRes,
+        configRes,
+        vehiclesRes,
+        cardsRes,
+      ] = await Promise.all([
+        api.get("/parking"),
+        api.get("/api/mobile/sessions"),
+        api.get("/api/mobile/reservations"),
+        api.get("/api/config"),
+        api.get("/api/user/vehicles"),
+        api.get("/api/user/payment-methods"),
       ]);
-      console.log('[DEBUG] vehiclesRes:', JSON.stringify(vehiclesRes.data));
-      console.log('[DEBUG] cardsRes:', JSON.stringify(cardsRes.data));
+      console.log("[DEBUG] vehiclesRes:", JSON.stringify(vehiclesRes.data));
+      console.log("[DEBUG] cardsRes:", JSON.stringify(cardsRes.data));
       setSpots(spotsRes.data);
       setSessions(sessionsRes.data.sessions || []);
       setReservations(reservationsRes.data.reservations || []);
       const vehicles = vehiclesRes.data.vehicles || [];
       const cards = cardsRes.data.payment_methods || [];
-      console.log('[DEBUG] Setting userVehicles:', vehicles.length, 'userCards:', cards.length);
+      console.log(
+        "[DEBUG] Setting userVehicles:",
+        vehicles.length,
+        "userCards:",
+        cards.length,
+      );
       setUserVehicles(vehicles);
       setUserCards(cards);
       if (configRes.data?.parking_rate_per_hour) {
         setParkingRate(configRes.data.parking_rate_per_hour);
       }
     } catch (e) {
-      console.log('Load error:', e.message, e.response?.data);
+      console.log("Load error:", e.message, e.response?.data);
     } finally {
       setLoading(false);
     }
@@ -1202,64 +1712,64 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   // WebSocket connection for real-time spot updates
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
-  
+
   const connectWebSocket = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    
+
     try {
-      console.log('[WS] Connecting to', WS_URL);
+      console.log("[WS] Connecting to", WS_URL);
       wsRef.current = new WebSocket(WS_URL);
-      
+
       wsRef.current.onopen = () => {
-        console.log('[WS] Connected');
-        showToast('success', 'Conectado', 'Atualizações em tempo real ativas');
+        console.log("[WS] Connected");
+        showToast("success", "Connected", "Real-time updates active");
       };
-      
+
       wsRef.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           // Update spots with real-time data
           setSpots(data);
         } catch (e) {
-          console.log('[WS] Parse error:', e.message);
+          console.log("[WS] Parse error:", e.message);
         }
       };
-      
+
       wsRef.current.onclose = () => {
-        console.log('[WS] Disconnected, reconnecting in 5s...');
+        console.log("[WS] Disconnected, reconnecting in 5s...");
         // Reconnect after 5 seconds
         reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000);
       };
-      
+
       wsRef.current.onerror = (error) => {
-        console.log('[WS] Error:', error.message);
+        console.log("[WS] Error:", error.message);
       };
     } catch (e) {
-      console.log('[WS] Connection failed:', e.message);
+      console.log("[WS] Connection failed:", e.message);
     }
   };
 
   useEffect(() => {
     // Initial data load
     loadData();
-    
+
     // Connect WebSocket for real-time spot updates
     connectWebSocket();
-    
+
     // Fallback: refresh sessions/reservations every 60 seconds (spots come via WS)
     const interval = setInterval(async () => {
       try {
         const [sessionsRes, reservationsRes] = await Promise.all([
-          api.get('/api/mobile/sessions'),
-          api.get('/api/mobile/reservations'),
+          api.get("/api/mobile/sessions"),
+          api.get("/api/mobile/reservations"),
         ]);
         setSessions(sessionsRes.data.sessions || []);
         setReservations(reservationsRes.data.reservations || []);
       } catch (e) {
-        console.log('Refresh error:', e.message);
+        console.log("Refresh error:", e.message);
       }
     }, 60000);
-    
+
     return () => {
       clearInterval(interval);
       if (reconnectTimeoutRef.current) {
@@ -1274,60 +1784,82 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   const openReserveModal = async (spotName) => {
     setSelectedSpot(spotName);
     setReserveForToday(true);
-    
+
     // Auto-select primary vehicle or first vehicle if only one
-    const primaryVehicle = userVehicles.find(v => v.is_primary);
-    setSelectedVehicleForReservation(primaryVehicle?.plate || userVehicles[0]?.plate || null);
-    
+    const primaryVehicle = userVehicles.find((v) => v.is_primary);
+    setSelectedVehicleForReservation(
+      primaryVehicle?.plate || userVehicles[0]?.plate || null,
+    );
+
     // Check if this spot already has reservations for today/tomorrow (from any user)
     try {
-      const res = await api.get('/api/reservations/check', { 
-        params: { spot: spotName } 
+      const res = await api.get("/api/reservations/check", {
+        params: { spot: spotName },
       });
       setSpotReservationStatus(res.data || {});
     } catch (e) {
-      console.log('Could not check spot reservation status:', e.message);
+      console.log("Could not check spot reservation status:", e.message);
       setSpotReservationStatus({});
     }
-    
+
     setShowReserveModal(true);
   };
 
   const handleReserve = async () => {
     if (!selectedSpot) return;
     if (!selectedVehicleForReservation) {
-      showToast('error', 'Selecione um veículo', 'Escolha qual carro vai usar nesta reserva.');
+      showToast(
+        "error",
+        "Select a vehicle",
+        "Choose which car you will use for this reservation.",
+      );
       return;
     }
     try {
-      await api.post('/api/mobile/reservations', { 
-        spot: selectedSpot, 
-        reservation_date: reserveForToday ? 'today' : 'tomorrow',
-        plate: selectedVehicleForReservation
+      await api.post("/api/mobile/reservations", {
+        spot: selectedSpot,
+        reservation_date: reserveForToday ? "today" : "tomorrow",
+        plate: selectedVehicleForReservation,
       });
-      showToast('success', 'Reserva confirmada!', `Vaga ${selectedSpot} reservada para ${reserveForToday ? 'hoje' : 'amanhã'}. Multa de 20€ se não usar.`);
+      showToast(
+        "success",
+        "Reservation confirmed!",
+        `Spot ${selectedSpot} reserved for ${reserveForToday ? "today" : "tomorrow"}. €20 fine if not used.`,
+      );
       setShowReserveModal(false);
       setSelectedSpot(null);
       loadData();
     } catch (e) {
-      showToast('error', 'Erro na reserva', e.response?.data?.detail || 'Falha ao reservar');
+      showToast(
+        "error",
+        "Reservation error",
+        e.response?.data?.detail || "Failed to reserve",
+      );
     }
   };
 
   const handleCancelReservation = async (spotName) => {
     setConfirmSpot(spotName);
-    setConfirmAction('cancel');
+    setConfirmAction("cancel");
     setShowConfirmModal(true);
   };
-  
+
   const executeCancelReservation = async () => {
     if (!confirmSpot) return;
     try {
       await api.delete(`/api/mobile/reservations/${confirmSpot}`);
-      showToast('success', 'Reserva cancelada', `Vaga ${confirmSpot} está agora disponível`);
+      showToast(
+        "success",
+        "Reservation canceled",
+        `Spot ${confirmSpot} is now available`,
+      );
       loadData();
     } catch (e) {
-      showToast('error', 'Erro', e.response?.data?.detail || 'Falha ao cancelar');
+      showToast(
+        "error",
+        "Error",
+        e.response?.data?.detail || "Failed to cancel",
+      );
     } finally {
       setShowConfirmModal(false);
       setConfirmSpot(null);
@@ -1336,27 +1868,40 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
 
   const handlePay = async (sessionId, amount) => {
     try {
-      await api.post('/api/mobile/payments', {
+      await api.post("/api/mobile/payments", {
         session_id: sessionId,
         amount: amount,
-        method: 'card',
+        method: "card",
       });
-      showToast('success', 'Pagamento efetuado!', 'Tem 15 minutos para sair do parque');
+      showToast(
+        "success",
+        "Payment successful!",
+        "You have 15 minutes to exit the parking",
+      );
       loadData();
     } catch (e) {
-      showToast('error', 'Erro no pagamento', e.response?.data?.detail || 'Falha ao processar pagamento');
+      showToast(
+        "error",
+        "Payment error",
+        e.response?.data?.detail || "Failed to process payment",
+      );
     }
   };
 
-  const spotsList = Object.entries(spots).map(([name, data]) => ({ name, ...data }));
-  const freeSpots = spotsList.filter(s => !s.occupied && !s.reserved);
-  const occupiedSpots = spotsList.filter(s => s.occupied);
+  const spotsList = Object.entries(spots).map(([name, data]) => ({
+    name,
+    ...data,
+  }));
+  const freeSpots = spotsList.filter((s) => !s.occupied && !s.reserved);
+  const occupiedSpots = spotsList.filter((s) => s.occupied);
 
   // Skeleton Loading State
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-        <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.background }]}
+      >
+        <StatusBar style={isDarkMode ? "light" : "dark"} />
         <View style={[styles.homeHeader, { backgroundColor: theme.surface }]}>
           <View>
             <SkeletonBox width={120} height={24} style={{ marginBottom: 8 }} />
@@ -1364,7 +1909,12 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
           </View>
           <SkeletonBox width={40} height={20} />
         </View>
-        <View style={[styles.tabs, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <View
+          style={[
+            styles.tabs,
+            { backgroundColor: theme.surface, borderBottomColor: theme.border },
+          ]}
+        >
           <SkeletonBox width={80} height={36} style={{ marginHorizontal: 8 }} />
           <SkeletonBox width={80} height={36} style={{ marginHorizontal: 8 }} />
           <SkeletonBox width={80} height={36} style={{ marginHorizontal: 8 }} />
@@ -1388,35 +1938,56 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar style={isDarkMode ? 'light' : 'dark'} />
-      
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
+
       {/* Header */}
       <View style={[styles.homeHeader, { backgroundColor: theme.surface }]}>
         <View>
-          <Text style={[styles.greeting, { color: theme.text }]}>Olá, {user?.name?.split(' ')[0]}!</Text>
+          <Text style={[styles.greeting, { color: theme.text }]}>
+            Hello, {user?.name?.split(" ")[0]}!
+          </Text>
         </View>
       </View>
 
       {/* Tabs */}
-      <View style={[styles.tabs, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-        {['home', 'spots', 'settings'].map((tab) => (
+      <View
+        style={[
+          styles.tabs,
+          { backgroundColor: theme.surface, borderBottomColor: theme.border },
+        ]}
+      >
+        {["home", "spots", "settings"].map((tab) => (
           <TouchableOpacity
             key={tab}
-            style={[styles.tab, activeTab === tab && { backgroundColor: theme.primary }]}
+            style={[
+              styles.tab,
+              activeTab === tab && { backgroundColor: theme.primary },
+            ]}
             onPress={() => {
-              triggerHaptic('light');
+              triggerHaptic("light");
               setActiveTab(tab);
             }}
           >
-            <Text style={[styles.tabText, { color: theme.textSecondary }, activeTab === tab && { color: theme.secondary, fontWeight: '600' }]}>
-              {tab === 'home' ? 'Início' : tab === 'spots' ? 'Vagas' : 'Definições'}
+            <Text
+              style={[
+                styles.tabText,
+                { color: theme.textSecondary },
+                activeTab === tab && {
+                  color: theme.secondary,
+                  fontWeight: "600",
+                },
+              ]}
+            >
+              {tab === "home" ? "Home" : tab === "spots" ? "Spots" : "Settings"}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         refreshControl={
           <RefreshControl
@@ -1431,60 +2002,122 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
           />
         }
       >
-        {activeTab === 'home' && (
+        {activeTab === "home" && (
           <>
             {/* Onboarding - Show setup prompts if user hasn't completed setup */}
             {!hasCompletedSetup && (
               <View style={styles.section}>
-                <View style={[styles.onboardingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View
+                  style={[
+                    styles.onboardingCard,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                >
                   {needsVehicle ? (
                     <>
                       <CarIcon size={64} color={theme.textMuted} />
-                      <Text style={[styles.onboardingTitle, { color: theme.text }]}>
-                        Adicione o seu veículo
+                      <Text
+                        style={[styles.onboardingTitle, { color: theme.text }]}
+                      >
+                        Add your vehicle
                       </Text>
-                      <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary }]}>
-                        Para utilizar o estacionamento, precisa de registar pelo menos um veículo.
+                      <Text
+                        style={[
+                          styles.onboardingSubtitle,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        To use the parking, you need to register at least one
+                        vehicle.
                       </Text>
                       <TouchableOpacity
-                        style={[styles.onboardingButton, { backgroundColor: theme.primary }]}
+                        style={[
+                          styles.onboardingButton,
+                          { backgroundColor: theme.primary },
+                        ]}
                         onPress={() => {
-                          triggerHaptic('medium');
-                          setActiveTab('settings');
+                          triggerHaptic("medium");
+                          setActiveTab("settings");
                         }}
                       >
                         <PlusIcon size={20} color={theme.secondary} />
-                        <Text style={[styles.onboardingButtonText, { color: theme.secondary }]}>
-                          Adicionar Veículo
+                        <Text
+                          style={[
+                            styles.onboardingButtonText,
+                            { color: theme.secondary },
+                          ]}
+                        >
+                          Add Vehicle
                         </Text>
                       </TouchableOpacity>
                     </>
                   ) : needsCard ? (
                     <>
                       <CreditCardIcon size={64} color={theme.textMuted} />
-                      <Text style={[styles.onboardingTitle, { color: theme.text }]}>
-                        Adicione um método de pagamento
+                      <Text
+                        style={[styles.onboardingTitle, { color: theme.text }]}
+                      >
+                        Add a payment method
                       </Text>
-                      <Text style={[styles.onboardingSubtitle, { color: theme.textSecondary }]}>
-                        Para pagar o estacionamento automaticamente, precisa de registar um cartão.
+                      <Text
+                        style={[
+                          styles.onboardingSubtitle,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        To pay for parking automatically, you need to register a
+                        card.
                       </Text>
-                      <View style={[styles.onboardingVehiclePreview, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                      <View
+                        style={[
+                          styles.onboardingVehiclePreview,
+                          {
+                            backgroundColor: theme.background,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                      >
                         <CarIcon size={20} color={theme.primary} />
-                        <Text style={{ color: theme.text, marginLeft: 8, fontWeight: '600' }}>
+                        <Text
+                          style={{
+                            color: theme.text,
+                            marginLeft: 8,
+                            fontWeight: "600",
+                          }}
+                        >
                           {userVehicles[0]?.plate}
                         </Text>
-                        <Text style={{ color: theme.success, marginLeft: 'auto', fontSize: 12 }}>Registado</Text>
+                        <Text
+                          style={{
+                            color: theme.success,
+                            marginLeft: "auto",
+                            fontSize: 12,
+                          }}
+                        >
+                          Registered
+                        </Text>
                       </View>
                       <TouchableOpacity
-                        style={[styles.onboardingButton, { backgroundColor: theme.primary }]}
+                        style={[
+                          styles.onboardingButton,
+                          { backgroundColor: theme.primary },
+                        ]}
                         onPress={() => {
-                          triggerHaptic('medium');
-                          setActiveTab('settings');
+                          triggerHaptic("medium");
+                          setActiveTab("settings");
                         }}
                       >
                         <PlusIcon size={20} color={theme.secondary} />
-                        <Text style={[styles.onboardingButtonText, { color: theme.secondary }]}>
-                          Adicionar Cartão
+                        <Text
+                          style={[
+                            styles.onboardingButtonText,
+                            { color: theme.secondary },
+                          ]}
+                        >
+                          Add Card
                         </Text>
                       </TouchableOpacity>
                     </>
@@ -1492,7 +2125,7 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 </View>
               </View>
             )}
-            
+
             {/* Only show parking info if setup is complete */}
             {hasCompletedSetup && (
               <>
@@ -1500,196 +2133,443 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 {alerts.length > 0 && (
                   <View style={styles.alertsSection}>
                     {alerts.map((alert, i) => (
-                      <View key={i} style={[
-                        styles.alertCard,
-                        { backgroundColor: theme.surface, borderColor: theme.border },
-                        alert.type === 'warning' && styles.alertWarning,
-                        alert.type === 'danger' && styles.alertDanger,
-                        alert.type === 'info' && styles.alertInfo,
-                      ]}>
+                      <View
+                        key={i}
+                        style={[
+                          styles.alertCard,
+                          {
+                            backgroundColor: theme.surface,
+                            borderColor: theme.border,
+                          },
+                          alert.type === "warning" && styles.alertWarning,
+                          alert.type === "danger" && styles.alertDanger,
+                          alert.type === "info" && styles.alertInfo,
+                        ]}
+                      >
                         <View style={styles.alertIconContainer}>
-                          {alert.icon === 'clock' && <ClockIcon size={24} color="#fff" />}
-                          {alert.icon === 'danger' && <DangerIcon size={24} color="#fff" />}
-                          {alert.icon === 'payment' && <PaymentIcon size={24} color="#fff" />}
+                          {alert.icon === "clock" && (
+                            <ClockIcon size={24} color="#fff" />
+                          )}
+                          {alert.icon === "danger" && (
+                            <DangerIcon size={24} color="#fff" />
+                          )}
+                          {alert.icon === "payment" && (
+                            <PaymentIcon size={24} color="#fff" />
+                          )}
                         </View>
                         <View style={styles.alertContent}>
-                          <Text style={[styles.alertTitle, { color: theme.text }]}>{alert.title}</Text>
-                          <Text style={[styles.alertMessage, { color: theme.textSecondary }]}>{alert.message}</Text>
+                          <Text
+                            style={[styles.alertTitle, { color: theme.text }]}
+                          >
+                            {alert.title}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.alertMessage,
+                              { color: theme.textSecondary },
+                            ]}
+                          >
+                            {alert.message}
+                          </Text>
                         </View>
                       </View>
                     ))}
                   </View>
                 )}
-            
-            {/* Active Session Timer */}
-            {sessions.filter(s => s.status === 'open').length > 0 && (
-              <View style={styles.activeSessionSection}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessão Ativa</Text>
-                {sessions.filter(s => s.status === 'open').slice(0, 1).map((session, i) => (
-                  <View key={i} style={[styles.timerCard, { backgroundColor: theme.primary }]}>
-                    <View style={styles.timerHeader}>
-                      <Text style={[styles.timerSpot, { color: theme.secondary }]}>
-                        {session.spot ? `Vaga ${session.spot}` : 'Estacionado'}
-                      </Text>
-                      <View style={[styles.timerBadge, { backgroundColor: theme.secondary }]}>
-                        <Text style={[styles.timerBadgeText, { color: theme.primary }]}>EM CURSO</Text>
-                      </View>
-                    </View>
-                    <View style={styles.timerDisplay}>
-                      <Text style={[styles.timerTime, { color: theme.secondary }]}>
-                        {getElapsedTime(session.entry_time)}
-                      </Text>
-                      <Text style={[styles.timerCost, { color: theme.secondary }]}>
-                        €{getCurrentCost(session.entry_time)}
-                      </Text>
-                    </View>
-                    <Text style={[styles.timerEntry, { color: theme.secondary }]}>
-                      Entrada: {new Date(session.entry_time).toLocaleTimeString('pt-PT')}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            
-            {/* Pending Sessions */}
-            {sessions.filter(s => s.status === 'open').length > 0 && (
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Sessões a Pagar</Text>
-                {sessions.filter(s => s.status === 'open').map((session, i) => (
-                  <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <Text style={[styles.cardTitle, { color: theme.text }]}>
-                      {session.spot ? `Vaga ${session.spot}` : 'Em curso'}
-                    </Text>
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>€{getCurrentCost(session.entry_time)}</Text>
-                    <TouchableOpacity
-                      style={[styles.smallButton, { backgroundColor: theme.primary }]}
-                      onPress={() => {
-                        triggerHaptic('medium');
-                        handlePay(session.id, parseFloat(getCurrentCost(session.entry_time)));
-                      }}
-                    >
-                      <Text style={[styles.buttonText, { color: theme.secondary }]}>Pagar</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-            
-            {/* Stats */}
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Estacionamentos</Text>
-              <View style={styles.statsRow}>
-                <View style={[styles.statCardFree, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
-                  <Text style={[styles.statNumber, { color: theme.text }]}>{freeSpots.length}</Text>
-                  <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Livres</Text>
-                </View>
-                <View style={[styles.statCardOccupied, { backgroundColor: theme.surface, borderColor: theme.danger }]}>
-                  <Text style={[styles.statNumber, { color: theme.text }]}>{occupiedSpots.length}</Text>
-                  <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Ocupados</Text>
-                </View>
-              </View>
-            </View>
-            
 
-            {/* Reservations */}
-            {reservations.length > 0 && (
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Minhas Reservas</Text>
-                {reservations.map((res, i) => (
-                  <View key={i} style={[styles.reservationCard, { backgroundColor: theme.surface, borderColor: theme.warning }]}>
-                    <View>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>Vaga {res.spot}</Text>
-                      <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                        Para: {res.reservation_date || 'Hoje'}
-                      </Text>
-                      <Text style={[{ color: theme.warning, fontSize: 11, marginTop: 2 }]}>
-                        Multa de 20€ se não usar
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.cancelButton, { backgroundColor: theme.danger }]}
-                      onPress={() => {
-                        triggerHaptic('medium');
-                        handleCancelReservation(res.spot);
-                      }}
-                    >
-                      <Text style={[styles.cancelButtonText, { color: theme.textInverse }]}>Cancelar</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-            
-            {/* Session History */}
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Histórico</Text>
-              {sessions.filter(s => s.status !== 'open').length === 0 ? (
-                <EmptyState 
-                  icon={HistoryIcon}
-                  title="Sem histórico"
-                  subtitle="As suas sessões anteriores aparecerão aqui"
-                  theme={theme}
-                />
-              ) : (
-                sessions.filter(s => s.status !== 'open').slice(0, 5).map((session, i) => (
-                  <View key={i} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <View style={styles.sessionHeader}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>
-                        {session.spot ? `Vaga ${session.spot}` : 'Sessão'}
-                      </Text>
-                      <Text style={[
-                        styles.sessionStatus,
-                        { color: session.status === 'paid' ? theme.success : theme.warning }
-                      ]}>
-                        {session.status === 'paid' ? 'Pago' : 'Terminada'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                      {new Date(session.entry_time).toLocaleString('pt-PT')}
+                {/* Active Session Timer */}
+                {sessions.filter((s) => s.status === "open").length > 0 && (
+                  <View style={styles.activeSessionSection}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      Active Session
                     </Text>
-                    {session.amount_paid > 0 && (
-                      <Text style={[styles.amount, { color: theme.primary }]}>€{session.amount_paid.toFixed(2)}</Text>
-                    )}
+                    {sessions
+                      .filter((s) => s.status === "open")
+                      .slice(0, 1)
+                      .map((session, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.timerCard,
+                            { backgroundColor: theme.primary },
+                          ]}
+                        >
+                          <View style={styles.timerHeader}>
+                            <Text
+                              style={[
+                                styles.timerSpot,
+                                { color: theme.secondary },
+                              ]}
+                            >
+                              {session.spot ? `Spot ${session.spot}` : "Parked"}
+                            </Text>
+                            <View
+                              style={[
+                                styles.timerBadge,
+                                { backgroundColor: theme.secondary },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.timerBadgeText,
+                                  { color: theme.primary },
+                                ]}
+                              >
+                                IN PROGRESS
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.timerDisplay}>
+                            <Text
+                              style={[
+                                styles.timerTime,
+                                { color: theme.secondary },
+                              ]}
+                            >
+                              {getElapsedTime(session.entry_time)}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.timerCost,
+                                { color: theme.secondary },
+                              ]}
+                            >
+                              €{getCurrentCost(session.entry_time)}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[
+                              styles.timerEntry,
+                              { color: theme.secondary },
+                            ]}
+                          >
+                            Entry:{" "}
+                            {new Date(session.entry_time).toLocaleTimeString(
+                              "pt-PT",
+                            )}
+                          </Text>
+                        </View>
+                      ))}
                   </View>
-                ))
-              )}
-            </View>
+                )}
+
+                {/* Pending Sessions */}
+                {sessions.filter((s) => s.status === "open").length > 0 && (
+                  <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      Sessions to Pay
+                    </Text>
+                    {sessions
+                      .filter((s) => s.status === "open")
+                      .map((session, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.card,
+                            {
+                              backgroundColor: theme.surface,
+                              borderColor: theme.border,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.cardTitle, { color: theme.text }]}
+                          >
+                            {session.spot
+                              ? `Spot ${session.spot}`
+                              : "In progress"}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.cardText,
+                              { color: theme.textSecondary },
+                            ]}
+                          >
+                            €{getCurrentCost(session.entry_time)}
+                          </Text>
+                          <TouchableOpacity
+                            style={[
+                              styles.smallButton,
+                              { backgroundColor: theme.primary },
+                            ]}
+                            onPress={() => {
+                              triggerHaptic("medium");
+                              handlePay(
+                                session.id,
+                                parseFloat(getCurrentCost(session.entry_time)),
+                              );
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.buttonText,
+                                { color: theme.secondary },
+                              ]}
+                            >
+                              Pay
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                  </View>
+                )}
+
+                {/* Stats */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                    Parking
+                  </Text>
+                  <View style={styles.statsRow}>
+                    <View
+                      style={[
+                        styles.statCardFree,
+                        {
+                          backgroundColor: theme.surface,
+                          borderColor: theme.primary,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.statNumber, { color: theme.text }]}>
+                        {freeSpots.length}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.statLabel,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        Free
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.statCardOccupied,
+                        {
+                          backgroundColor: theme.surface,
+                          borderColor: theme.danger,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.statNumber, { color: theme.text }]}>
+                        {occupiedSpots.length}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.statLabel,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        Occupied
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Reservations */}
+                {reservations.length > 0 && (
+                  <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                      My Reservations
+                    </Text>
+                    {reservations.map((res, i) => (
+                      <View
+                        key={i}
+                        style={[
+                          styles.reservationCard,
+                          {
+                            backgroundColor: theme.surface,
+                            borderColor: theme.warning,
+                          },
+                        ]}
+                      >
+                        <View>
+                          <Text
+                            style={[styles.cardTitle, { color: theme.text }]}
+                          >
+                            Spot {res.spot}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.cardText,
+                              { color: theme.textSecondary },
+                            ]}
+                          >
+                            For: {res.reservation_date || "Today"}
+                          </Text>
+                          <Text
+                            style={[
+                              {
+                                color: theme.warning,
+                                fontSize: 11,
+                                marginTop: 2,
+                              },
+                            ]}
+                          >
+                            €20 fine if not used
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[
+                            styles.cancelButton,
+                            { backgroundColor: theme.danger },
+                          ]}
+                          onPress={() => {
+                            triggerHaptic("medium");
+                            handleCancelReservation(res.spot);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.cancelButtonText,
+                              { color: theme.textInverse },
+                            ]}
+                          >
+                            Cancel
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Session History */}
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                    History
+                  </Text>
+                  {sessions.filter((s) => s.status !== "open").length === 0 ? (
+                    <EmptyState
+                      icon={HistoryIcon}
+                      title="No history"
+                      subtitle="Your previous sessions will appear here"
+                      theme={theme}
+                    />
+                  ) : (
+                    sessions
+                      .filter((s) => s.status !== "open")
+                      .slice(0, 5)
+                      .map((session, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.card,
+                            {
+                              backgroundColor: theme.surface,
+                              borderColor: theme.border,
+                            },
+                          ]}
+                        >
+                          <View style={styles.sessionHeader}>
+                            <Text
+                              style={[styles.cardTitle, { color: theme.text }]}
+                            >
+                              {session.spot
+                                ? `Spot ${session.spot}`
+                                : "Session"}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.sessionStatus,
+                                {
+                                  color:
+                                    session.status === "paid"
+                                      ? theme.success
+                                      : theme.warning,
+                                },
+                              ]}
+                            >
+                              {session.status === "paid" ? "Paid" : "Ended"}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[
+                              styles.cardText,
+                              { color: theme.textSecondary },
+                            ]}
+                          >
+                            {new Date(session.entry_time).toLocaleString(
+                              "pt-PT",
+                            )}
+                          </Text>
+                          {session.amount_paid > 0 && (
+                            <Text
+                              style={[styles.amount, { color: theme.primary }]}
+                            >
+                              €{session.amount_paid.toFixed(2)}
+                            </Text>
+                          )}
+                        </View>
+                      ))
+                  )}
+                </View>
               </>
             )}
           </>
         )}
 
-        {activeTab === 'spots' && (
+        {activeTab === "spots" && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Vagas Disponíveis</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Available Spots
+            </Text>
             {spotsList.length === 0 ? (
-              <EmptyState 
+              <EmptyState
                 icon={ParkingIcon}
-                title="Sem vagas"
-                subtitle="Nenhuma vaga disponível no momento"
+                title="No spots"
+                subtitle="No spots available at the moment"
                 theme={theme}
               />
             ) : (
               spotsList.map((spot, i) => (
-                <View key={i} style={[styles.spotCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View
+                  key={i}
+                  style={[
+                    styles.spotCard,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                >
                   <View>
-                    <Text style={[styles.spotName, { color: theme.text }]}>{spot.name}</Text>
-                    <Text style={[
-                      styles.spotStatus,
-                      { color: spot.occupied ? theme.danger : spot.reserved ? theme.warning : theme.success }
-                    ]}>
-                      {spot.occupied ? 'Ocupado' : spot.reserved ? 'Reservado' : 'Livre'}
+                    <Text style={[styles.spotName, { color: theme.text }]}>
+                      {spot.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.spotStatus,
+                        {
+                          color: spot.occupied
+                            ? theme.danger
+                            : spot.reserved
+                              ? theme.warning
+                              : theme.success,
+                        },
+                      ]}
+                    >
+                      {spot.occupied
+                        ? "Occupied"
+                        : spot.reserved
+                          ? "Reserved"
+                          : "Free"}
                     </Text>
                   </View>
                   {!spot.occupied && !spot.reserved && (
                     <TouchableOpacity
-                      style={[styles.smallButton, { backgroundColor: theme.primary }]}
+                      style={[
+                        styles.smallButton,
+                        { backgroundColor: theme.primary },
+                      ]}
                       onPress={() => {
-                        triggerHaptic('medium');
+                        triggerHaptic("medium");
                         openReserveModal(spot.name);
                       }}
                     >
-                      <Text style={[styles.buttonText, { color: theme.secondary }]}>Reservar</Text>
+                      <Text
+                        style={[styles.buttonText, { color: theme.secondary }]}
+                      >
+                        Reserve
+                      </Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1698,8 +2578,8 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
           </View>
         )}
 
-        {activeTab === 'settings' && (
-          <SettingsTab 
+        {activeTab === "settings" && (
+          <SettingsTab
             user={user}
             theme={theme}
             isDarkMode={isDarkMode}
@@ -1719,120 +2599,184 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
         onRequestClose={() => setShowReserveModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <Animated.View 
+          <Animated.View
             style={[
-              styles.modalContent, 
-              { 
+              styles.modalContent,
+              {
                 backgroundColor: theme.surface,
                 transform: [{ translateY: reserveModalSlideAnim }],
-              }
+              },
             ]}
           >
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Reservar {selectedSpot}</Text>
-            
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              Reserve {selectedSpot}
+            </Text>
+
             {/* Vehicle Selector - scrollable list for scalability */}
             {userVehicles.length > 0 && (
               <>
-                <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginBottom: 8 }]}>
-                  {userVehicles.length > 1 ? 'Selecione o veículo' : 'Veículo'}
+                <Text
+                  style={[
+                    styles.modalSubtitle,
+                    { color: theme.textSecondary, marginBottom: 8 },
+                  ]}
+                >
+                  {userVehicles.length > 1 ? "Select vehicle" : "Vehicle"}
                 </Text>
-                <View style={{ 
-                  maxHeight: userVehicles.length > 3 ? 150 : undefined, 
-                  marginBottom: 12,
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                }}>
-                  <ScrollView 
+                <View
+                  style={{
+                    maxHeight: userVehicles.length > 3 ? 150 : undefined,
+                    marginBottom: 12,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                  }}
+                >
+                  <ScrollView
                     nestedScrollEnabled={true}
                     showsVerticalScrollIndicator={userVehicles.length > 3}
                   >
                     {userVehicles.map((vehicle, index) => {
-                      const isSelected = selectedVehicleForReservation === vehicle.plate;
+                      const isSelected =
+                        selectedVehicleForReservation === vehicle.plate;
                       return (
                         <TouchableOpacity
                           key={vehicle.plate}
                           style={[
                             {
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
                               padding: 12,
-                              backgroundColor: isSelected ? theme.primary : theme.background,
+                              backgroundColor: isSelected
+                                ? theme.primary
+                                : theme.background,
                               borderWidth: 1,
-                              borderColor: isSelected ? theme.primary : theme.border,
+                              borderColor: isSelected
+                                ? theme.primary
+                                : theme.border,
                               borderRadius: 10,
-                              marginBottom: index < userVehicles.length - 1 ? 8 : 0,
-                            }
+                              marginBottom:
+                                index < userVehicles.length - 1 ? 8 : 0,
+                            },
                           ]}
                           onPress={() => {
-                            triggerHaptic('light');
+                            triggerHaptic("light");
                             setSelectedVehicleForReservation(vehicle.plate);
                           }}
                         >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              flex: 1,
+                            }}
+                          >
                             {/* Car icon */}
-                            <View style={{ 
-                              width: 36, 
-                              height: 36, 
-                              borderRadius: 18, 
-                              backgroundColor: isSelected ? theme.secondary + '20' : theme.surface,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginRight: 12,
-                            }}>
-                              <CarIcon size={22} color={isSelected ? theme.secondary : theme.primary} />
+                            <View
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 18,
+                                backgroundColor: isSelected
+                                  ? theme.secondary + "20"
+                                  : theme.surface,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                marginRight: 12,
+                              }}
+                            >
+                              <CarIcon
+                                size={22}
+                                color={
+                                  isSelected ? theme.secondary : theme.primary
+                                }
+                              />
                             </View>
                             <View style={{ flex: 1 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={[
-                                  { 
-                                    fontSize: 15, 
-                                    fontWeight: '600',
-                                    color: isSelected ? theme.secondary : theme.text,
-                                  }
-                                ]}>
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    {
+                                      fontSize: 15,
+                                      fontWeight: "600",
+                                      color: isSelected
+                                        ? theme.secondary
+                                        : theme.text,
+                                    },
+                                  ]}
+                                >
                                   {vehicle.plate}
                                 </Text>
                                 {vehicle.is_primary && (
-                                  <View style={{
-                                    backgroundColor: isSelected ? theme.secondary : theme.primary,
-                                    paddingHorizontal: 6,
-                                    paddingVertical: 2,
-                                    borderRadius: 4,
-                                    marginLeft: 8,
-                                  }}>
-                                    <Text style={{ 
-                                      fontSize: 9, 
-                                      fontWeight: '600',
-                                      color: isSelected ? theme.primary : theme.secondary,
-                                    }}>
-                                      PRINCIPAL
+                                  <View
+                                    style={{
+                                      backgroundColor: isSelected
+                                        ? theme.secondary
+                                        : theme.primary,
+                                      paddingHorizontal: 6,
+                                      paddingVertical: 2,
+                                      borderRadius: 4,
+                                      marginLeft: 8,
+                                    }}
+                                  >
+                                    <Text
+                                      style={{
+                                        fontSize: 9,
+                                        fontWeight: "600",
+                                        color: isSelected
+                                          ? theme.primary
+                                          : theme.secondary,
+                                      }}
+                                    >
+                                      PRIMARY
                                     </Text>
                                   </View>
                                 )}
                               </View>
                               {vehicle.created_at && (
-                                <Text style={{ 
-                                  fontSize: 11, 
-                                  color: isSelected ? theme.secondary + '80' : theme.textSecondary,
-                                  marginTop: 2,
-                                }}>
-                                  Adicionado em {new Date(vehicle.created_at).toLocaleDateString('pt-PT')}
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    color: isSelected
+                                      ? theme.secondary + "80"
+                                      : theme.textSecondary,
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  Added on{" "}
+                                  {new Date(
+                                    vehicle.created_at,
+                                  ).toLocaleDateString("en-GB")}
                                 </Text>
                               )}
                             </View>
                           </View>
                           {/* Checkmark for selected */}
                           {isSelected && (
-                            <View style={{
-                              width: 24,
-                              height: 24,
-                              borderRadius: 12,
-                              backgroundColor: theme.secondary,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}>
-                              <Text style={{ color: theme.primary, fontWeight: 'bold', fontSize: 14 }}>✓</Text>
+                            <View
+                              style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: 12,
+                                backgroundColor: theme.secondary,
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: theme.primary,
+                                  fontWeight: "bold",
+                                  fontSize: 14,
+                                }}
+                              >
+                                ✓
+                              </Text>
                             </View>
                           )}
                         </TouchableOpacity>
@@ -1842,112 +2786,195 @@ const HomeScreen = ({ user, onLogout, theme, isDarkMode, setIsDarkMode, biometri
                 </View>
               </>
             )}
-            
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary, marginTop: 4 }]}>Selecione o dia</Text>
-            
+
+            <Text
+              style={[
+                styles.modalSubtitle,
+                { color: theme.textSecondary, marginTop: 4 },
+              ]}
+            >
+              Select day
+            </Text>
+
             <View style={styles.durationGrid}>
               <TouchableOpacity
                 style={[
                   styles.durationButton,
-                  { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginRight: 8 },
-                  reserveForToday && !spotReservationStatus.today_reserved && { borderColor: theme.primary, backgroundColor: theme.primary },
-                  spotReservationStatus.today_reserved && { opacity: 0.4, backgroundColor: theme.error + '20' }
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.background,
+                    flex: 1,
+                    marginRight: 8,
+                  },
+                  reserveForToday &&
+                    !spotReservationStatus.today_reserved && {
+                      borderColor: theme.primary,
+                      backgroundColor: theme.primary,
+                    },
+                  spotReservationStatus.today_reserved && {
+                    opacity: 0.4,
+                    backgroundColor: theme.error + "20",
+                  },
                 ]}
                 onPress={() => {
                   if (spotReservationStatus.today_reserved) {
-                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para hoje.');
+                    showToast(
+                      "error",
+                      "Unavailable",
+                      "This spot is already reserved for today.",
+                    );
                     return;
                   }
-                  triggerHaptic('light');
+                  triggerHaptic("light");
                   setReserveForToday(true);
                 }}
                 disabled={spotReservationStatus.today_reserved}
               >
-                <Text style={[
-                  styles.durationButtonText,
-                  { color: theme.text },
-                  reserveForToday && !spotReservationStatus.today_reserved && { color: theme.secondary },
-                  spotReservationStatus.today_reserved && { color: theme.error, textDecorationLine: 'line-through' }
-                ]}>
-                  Hoje
+                <Text
+                  style={[
+                    styles.durationButtonText,
+                    { color: theme.text },
+                    reserveForToday &&
+                      !spotReservationStatus.today_reserved && {
+                        color: theme.secondary,
+                      },
+                    spotReservationStatus.today_reserved && {
+                      color: theme.error,
+                      textDecorationLine: "line-through",
+                    },
+                  ]}
+                >
+                  Today
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.durationButton,
-                  { borderColor: theme.border, backgroundColor: theme.background, flex: 1, marginLeft: 8 },
-                  !reserveForToday && !spotReservationStatus.tomorrow_reserved && { borderColor: theme.primary, backgroundColor: theme.primary },
-                  spotReservationStatus.tomorrow_reserved && { opacity: 0.4, backgroundColor: theme.error + '20' }
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.background,
+                    flex: 1,
+                    marginLeft: 8,
+                  },
+                  !reserveForToday &&
+                    !spotReservationStatus.tomorrow_reserved && {
+                      borderColor: theme.primary,
+                      backgroundColor: theme.primary,
+                    },
+                  spotReservationStatus.tomorrow_reserved && {
+                    opacity: 0.4,
+                    backgroundColor: theme.error + "20",
+                  },
                 ]}
                 onPress={() => {
                   if (spotReservationStatus.tomorrow_reserved) {
-                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para amanhã.');
+                    showToast(
+                      "error",
+                      "Unavailable",
+                      "This spot is already reserved for tomorrow.",
+                    );
                     return;
                   }
-                  triggerHaptic('light');
+                  triggerHaptic("light");
                   setReserveForToday(false);
                 }}
                 disabled={spotReservationStatus.tomorrow_reserved}
               >
-                <Text style={[
-                  styles.durationButtonText,
-                  { color: theme.text },
-                  !reserveForToday && !spotReservationStatus.tomorrow_reserved && { color: theme.secondary },
-                  spotReservationStatus.tomorrow_reserved && { color: theme.error, textDecorationLine: 'line-through' }
-                ]}>
-                  Amanhã
+                <Text
+                  style={[
+                    styles.durationButtonText,
+                    { color: theme.text },
+                    !reserveForToday &&
+                      !spotReservationStatus.tomorrow_reserved && {
+                        color: theme.secondary,
+                      },
+                    spotReservationStatus.tomorrow_reserved && {
+                      color: theme.error,
+                      textDecorationLine: "line-through",
+                    },
+                  ]}
+                >
+                  Tomorrow
                 </Text>
               </TouchableOpacity>
             </View>
-            
-            <Text style={[styles.modalSubtitle, { color: theme.warning, marginTop: 12, fontSize: 13 }]}>
-              ⚠️ Multa de 20€ se não usar a reserva
+
+            <Text
+              style={[
+                styles.modalSubtitle,
+                { color: theme.warning, marginTop: 12, fontSize: 13 },
+              ]}
+            >
+              ⚠️ €20 fine if reservation is not used
             </Text>
-            
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalCancelBtn, { backgroundColor: theme.background, borderColor: theme.border }]}
+                style={[
+                  styles.modalCancelBtn,
+                  {
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                  },
+                ]}
                 onPress={() => {
-                  triggerHaptic('light');
+                  triggerHaptic("light");
                   setShowReserveModal(false);
                 }}
               >
-                <Text style={[styles.modalCancelText, { color: theme.text }]}>Cancelar</Text>
+                <Text style={[styles.modalCancelText, { color: theme.text }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.modalConfirmBtn, 
+                  styles.modalConfirmBtn,
                   { backgroundColor: theme.primary },
-                  (reserveForToday && spotReservationStatus.today_reserved) || (!reserveForToday && spotReservationStatus.tomorrow_reserved) 
-                    ? { opacity: 0.5 } : {}
+                  (reserveForToday && spotReservationStatus.today_reserved) ||
+                  (!reserveForToday && spotReservationStatus.tomorrow_reserved)
+                    ? { opacity: 0.5 }
+                    : {},
                 ]}
                 onPress={() => {
                   if (reserveForToday && spotReservationStatus.today_reserved) {
-                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para hoje.');
+                    showToast(
+                      "error",
+                      "Unavailable",
+                      "This spot is already reserved for today.",
+                    );
                     return;
                   }
-                  if (!reserveForToday && spotReservationStatus.tomorrow_reserved) {
-                    showToast('error', 'Indisponível', 'Esta vaga já está reservada para amanhã.');
+                  if (
+                    !reserveForToday &&
+                    spotReservationStatus.tomorrow_reserved
+                  ) {
+                    showToast(
+                      "error",
+                      "Unavailable",
+                      "This spot is already reserved for tomorrow.",
+                    );
                     return;
                   }
-                  triggerHaptic('medium');
+                  triggerHaptic("medium");
                   handleReserve();
                 }}
               >
-                <Text style={[styles.buttonText, { color: theme.secondary }]}>Reservar</Text>
+                <Text style={[styles.buttonText, { color: theme.secondary }]}>
+                  Reserve
+                </Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
         </View>
       </Modal>
-      
+
       {/* Confirmation Modal */}
       <ConfirmModal
         visible={showConfirmModal}
-        title="Cancelar Reserva"
-        message={`Deseja cancelar a reserva da vaga ${confirmSpot}?`}
-        confirmText="Sim, Cancelar"
-        cancelText="Não"
+        title="Cancel Reservation"
+        message={`Do you want to cancel the reservation for spot ${confirmSpot}?`}
+        confirmText="Yes, Cancel"
+        cancelText="No"
         onConfirm={executeCancelReservation}
         onCancel={() => {
           setShowConfirmModal(false);
@@ -1968,7 +2995,7 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  
+
   // Get current theme
   const theme = isDarkMode ? darkColors : lightColors;
   colors = theme; // Update global colors for skeleton
@@ -1976,36 +3003,39 @@ export default function App() {
   useEffect(() => {
     loadSettings();
   }, []);
-  
+
   // Persist dark mode setting (only after initial load)
   useEffect(() => {
     if (settingsLoaded) {
-      AsyncStorage.setItem('isDarkMode', JSON.stringify(isDarkMode));
+      AsyncStorage.setItem("isDarkMode", JSON.stringify(isDarkMode));
     }
   }, [isDarkMode, settingsLoaded]);
-  
+
   // Persist biometrics setting (only after initial load)
   useEffect(() => {
     if (settingsLoaded) {
-      AsyncStorage.setItem('biometricsEnabled', JSON.stringify(biometricsEnabled));
+      AsyncStorage.setItem(
+        "biometricsEnabled",
+        JSON.stringify(biometricsEnabled),
+      );
     }
   }, [biometricsEnabled, settingsLoaded]);
 
   const loadSettings = async () => {
     try {
       // Load dark mode setting
-      const darkModeSetting = await AsyncStorage.getItem('isDarkMode');
+      const darkModeSetting = await AsyncStorage.getItem("isDarkMode");
       if (darkModeSetting !== null) {
         setIsDarkMode(JSON.parse(darkModeSetting));
       }
-      
+
       // Load biometrics setting
-      const biometricsSetting = await AsyncStorage.getItem('biometricsEnabled');
+      const biometricsSetting = await AsyncStorage.getItem("biometricsEnabled");
       if (biometricsSetting !== null) {
         setBiometricsEnabled(JSON.parse(biometricsSetting));
       }
     } catch (e) {
-      console.log('Settings load error:', e);
+      console.log("Settings load error:", e);
     } finally {
       setSettingsLoaded(true);
     }
@@ -2013,33 +3043,44 @@ export default function App() {
 
   const checkAuth = async () => {
     try {
-      const storedUser = await AsyncStorage.getItem('user');
-      const token = await AsyncStorage.getItem('token');
-      
+      const storedUser = await AsyncStorage.getItem("user");
+      const token = await AsyncStorage.getItem("token");
+
       if (storedUser && token) {
         // Check if biometrics is enabled
-        const biometricsSetting = await AsyncStorage.getItem('biometricsEnabled');
-        const biometricsOn = biometricsSetting ? JSON.parse(biometricsSetting) : false;
-        
+        const biometricsSetting =
+          await AsyncStorage.getItem("biometricsEnabled");
+        const biometricsOn = biometricsSetting
+          ? JSON.parse(biometricsSetting)
+          : false;
+
         if (biometricsOn) {
           // Check if device supports biometrics
           const compatible = await LocalAuthentication.hasHardwareAsync();
           const enrolled = await LocalAuthentication.isEnrolledAsync();
-          
+
           if (compatible && enrolled) {
             const result = await LocalAuthentication.authenticateAsync({
-              promptMessage: 'Autenticar com biometria',
-              cancelLabel: 'Usar senha',
-              fallbackLabel: 'Usar senha',
+              promptMessage: "Authenticate with biometrics",
+              cancelLabel: "Use password",
+              fallbackLabel: "Use password",
               disableDeviceFallback: false,
             });
-            
+
             if (result.success) {
               setUser(JSON.parse(storedUser));
-              showToast('success', 'Bem-vindo!', 'Autenticação biométrica bem-sucedida');
+              showToast(
+                "success",
+                "Welcome!",
+                "Biometric authentication successful",
+              );
             } else {
               // Biometric failed, show login screen
-              showToast('info', 'Biometria cancelada', 'Por favor, faça login manualmente');
+              showToast(
+                "info",
+                "Biometrics canceled",
+                "Please log in manually",
+              );
             }
           } else {
             // No biometrics available, auto-login
@@ -2051,19 +3092,19 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.log('Auth check error:', e);
+      console.log("Auth check error:", e);
     } finally {
       setLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('token');
-    await AsyncStorage.removeItem('user');
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("user");
     setUser(null);
-    showToast('info', 'Sessão terminada', 'Até breve!');
+    showToast("info", "Logged out", "See you soon!");
   };
-  
+
   const handleSplashFinish = () => {
     setShowSplash(false);
     checkAuth();
@@ -2072,7 +3113,13 @@ export default function App() {
   // Esperar settings carregarem antes de mostrar splash com tema correto
   if (!settingsLoaded) {
     return (
-      <View style={[styles.container, styles.centered, { backgroundColor: '#121212' }]}>
+      <View
+        style={[
+          styles.container,
+          styles.centered,
+          { backgroundColor: "#121212" },
+        ]}
+      >
         <ActivityIndicator color="#97d700" size="small" />
       </View>
     );
@@ -2086,9 +3133,9 @@ export default function App() {
   return (
     <>
       {user ? (
-        <HomeScreen 
-          user={user} 
-          onLogout={handleLogout} 
+        <HomeScreen
+          user={user}
+          onLogout={handleLogout}
           theme={theme}
           isDarkMode={isDarkMode}
           setIsDarkMode={setIsDarkMode}
@@ -2109,16 +3156,16 @@ const styles = StyleSheet.create({
     backgroundColor: lightColors.background,
   },
   centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   scrollContent: {
     flexGrow: 1,
     padding: 24,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 32,
   },
   logo: {
@@ -2127,7 +3174,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 40,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.text,
   },
   subtitle: {
@@ -2145,7 +3192,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.text,
     marginBottom: 4,
   },
@@ -2172,13 +3219,13 @@ const styles = StyleSheet.create({
     color: lightColors.danger,
     fontSize: 14,
     marginTop: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   button: {
     backgroundColor: lightColors.primary,
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 24,
   },
   buttonDisabled: {
@@ -2187,27 +3234,27 @@ const styles = StyleSheet.create({
   buttonText: {
     color: lightColors.secondary,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   switchButton: {
     marginTop: 16,
-    alignItems: 'center',
+    alignItems: "center",
   },
   switchText: {
     color: lightColors.secondary,
     fontSize: 14,
   },
   homeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 16,
     paddingTop: 30,
     backgroundColor: lightColors.surface,
   },
   greeting: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.text,
   },
   plate: {
@@ -2220,7 +3267,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   tabs: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: lightColors.surface,
     paddingHorizontal: 8,
     paddingBottom: 8,
@@ -2230,7 +3277,7 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     paddingVertical: 10,
-    alignItems: 'center',
+    alignItems: "center",
     borderRadius: 8,
   },
   tabActive: {
@@ -2242,14 +3289,14 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: lightColors.text,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   content: {
     flex: 1,
     padding: 16,
   },
   statsRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     marginBottom: 16,
   },
@@ -2258,7 +3305,7 @@ const styles = StyleSheet.create({
     backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     borderColor: lightColors.primary,
     borderWidth: 1,
   },
@@ -2267,13 +3314,13 @@ const styles = StyleSheet.create({
     backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     borderColor: lightColors.danger,
     borderWidth: 1,
   },
   statNumber: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.text,
   },
   statLabel: {
@@ -2286,7 +3333,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     color: lightColors.text,
     marginBottom: 12,
   },
@@ -2295,15 +3342,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: lightColors.border,
   },
   spotName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.text,
   },
   spotStatus: {
@@ -2318,23 +3365,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   sessionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sessionStatus: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   amount: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.primary,
     marginTop: 8,
   },
   emptyText: {
     color: lightColors.textSecondary,
-    textAlign: 'center',
+    textAlign: "center",
     padding: 32,
   },
   loadingText: {
@@ -2347,9 +3394,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: lightColors.warning,
   },
@@ -2362,7 +3409,7 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: lightColors.textInverse,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Settings styles
   settingsCard: {
@@ -2381,35 +3428,35 @@ const styles = StyleSheet.create({
   settingsValue: {
     fontSize: 16,
     color: lightColors.text,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   settingsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   settingsRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   logoutButton: {
     backgroundColor: lightColors.danger,
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 24,
   },
   logoutButtonText: {
     color: lightColors.textInverse,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: lightColors.surface,
@@ -2419,22 +3466,22 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.text,
-    textAlign: 'center',
+    textAlign: "center",
   },
   modalSubtitle: {
     fontSize: 14,
     color: lightColors.textSecondary,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 4,
     marginBottom: 20,
   },
   durationGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
-    justifyContent: 'center',
+    justifyContent: "center",
     marginBottom: 24,
   },
   durationButton: {
@@ -2443,8 +3490,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     borderColor: lightColors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     backgroundColor: lightColors.background,
   },
   durationButtonActive: {
@@ -2453,21 +3500,21 @@ const styles = StyleSheet.create({
   },
   durationButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: lightColors.text,
   },
   durationButtonTextActive: {
     color: lightColors.secondary,
   },
   modalButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   modalCancelBtn: {
     flex: 1,
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     backgroundColor: lightColors.background,
     borderWidth: 1,
     borderColor: lightColors.border,
@@ -2475,13 +3522,13 @@ const styles = StyleSheet.create({
   modalCancelText: {
     color: lightColors.text,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   modalConfirmBtn: {
     flex: 1,
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     backgroundColor: lightColors.primary,
   },
   // Alert styles
@@ -2489,8 +3536,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   alertCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 12,
     borderRadius: 12,
     marginBottom: 8,
@@ -2499,24 +3546,24 @@ const styles = StyleSheet.create({
     borderColor: lightColors.border,
   },
   alertWarning: {
-    backgroundColor: '#fef3c7',
-    borderColor: '#f59e0b',
+    backgroundColor: "#fef3c7",
+    borderColor: "#f59e0b",
   },
   alertDanger: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
+    backgroundColor: "#fee2e2",
+    borderColor: "#ef4444",
   },
   alertInfo: {
-    backgroundColor: '#dbeafe',
-    borderColor: '#3b82f6',
+    backgroundColor: "#dbeafe",
+    borderColor: "#3b82f6",
   },
   alertIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
   },
   alertContent: {
@@ -2524,7 +3571,7 @@ const styles = StyleSheet.create({
   },
   alertTitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: lightColors.text,
   },
   alertMessage: {
@@ -2543,14 +3590,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   timerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   timerSpot: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.secondary,
   },
   timerBadge: {
@@ -2562,21 +3609,21 @@ const styles = StyleSheet.create({
   timerBadgeText: {
     color: lightColors.primary,
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   timerDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
   },
   timerTime: {
     fontSize: 36,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: lightColors.secondary,
   },
   timerCost: {
     fontSize: 24,
-    fontWeight: '600',
+    fontWeight: "600",
     color: lightColors.secondary,
   },
   timerEntry: {
@@ -2587,21 +3634,21 @@ const styles = StyleSheet.create({
   },
   // Empty State styles
   emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 48,
     paddingHorizontal: 24,
   },
   emptyStateTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   emptyStateSubtitle: {
     fontSize: 14,
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   // Splash Screen styles
   splashContainer: {
@@ -2609,8 +3656,8 @@ const styles = StyleSheet.create({
   },
   splashGradient: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   splashEmoji: {
     fontSize: 80,
@@ -2618,57 +3665,57 @@ const styles = StyleSheet.create({
   },
   splashTitle: {
     fontSize: 48,
-    fontWeight: 'bold',
-    color: '#97d700',
+    fontWeight: "bold",
+    color: "#97d700",
   },
   splashSubtitle: {
     fontSize: 16,
-    color: '#a0a0a0',
+    color: "#a0a0a0",
     marginTop: 8,
   },
   // Confirmation Modal styles
   confirmModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 24,
   },
   confirmModalContent: {
-    width: '100%',
+    width: "100%",
     borderRadius: 16,
     padding: 24,
   },
   confirmModalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: "bold",
+    textAlign: "center",
     marginBottom: 12,
   },
   confirmModalMessage: {
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 24,
   },
   confirmModalButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   confirmModalBtn: {
     flex: 1,
     padding: 14,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
   confirmModalBtnText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   // Vehicle and Card Form styles
   vehicleCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     backgroundColor: lightColors.surface,
     borderRadius: 12,
     padding: 16,
@@ -2678,7 +3725,7 @@ const styles = StyleSheet.create({
   },
   vehiclePlate: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   formCard: {
     backgroundColor: lightColors.surface,
@@ -2700,12 +3747,12 @@ const styles = StyleSheet.create({
   formButton: {
     borderRadius: 10,
     padding: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   smallAddButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -2724,8 +3771,8 @@ const styles = StyleSheet.create({
   },
   // Onboarding styles
   onboardingCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: 32,
     borderRadius: 16,
     borderWidth: 1,
@@ -2733,20 +3780,20 @@ const styles = StyleSheet.create({
   },
   onboardingTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginTop: 20,
-    textAlign: 'center',
+    textAlign: "center",
   },
   onboardingSubtitle: {
     fontSize: 14,
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: "center",
     paddingHorizontal: 16,
   },
   onboardingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
@@ -2755,18 +3802,18 @@ const styles = StyleSheet.create({
   },
   onboardingButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 8,
   },
   onboardingVehiclePreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 10,
     borderWidth: 1,
     marginTop: 16,
-    width: '100%',
+    width: "100%",
   },
   smallButton: {
     paddingVertical: 6,
