@@ -2,7 +2,7 @@
 
 Sistema completo e moderno de monitorização e gestão de estacionamento que utiliza Inteligência Artificial (Computer Vision) para detecção de vagas em tempo real e reconhecimento de matrículas (ALPR). A solução integra hardware IoT (ESP32), um backend robusto em FastAPI, uma interface frontend moderna em React e uma **aplicação mobile em React Native/Expo**.
 
-![Parking Monitor](frame.png)
+![Parking Monitor](output_overlay-ezgif.com-optimize.gif)
 
 ---
 
