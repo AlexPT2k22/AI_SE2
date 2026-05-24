@@ -2,19 +2,34 @@
 import React from 'react';
 import Card from '../components/common/Card';
 
+const IS_MOCK = import.meta.env.VITE_MOCK === 'true';
+
 export default function LiveMonitor() {
     const [spots, setSpots] = React.useState({});
     const [wsStatus, setWsStatus] = React.useState('Connecting...');
     const [wsConnected, setWsConnected] = React.useState(false);
     const wsRef = React.useRef(null);
 
-    const getWsUrl = () => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${protocol}//${window.location.host}/ws`;
-    };
-
     React.useEffect(() => {
-        const wsUrl = getWsUrl();
+        if (IS_MOCK) {
+            let mockSpots;
+            import('../mock/data').then(mod => {
+              mockSpots = mod.getMockSpots;
+              setSpots(mockSpots());
+            });
+            setWsStatus('Connected (Mock)');
+            setWsConnected(true);
+            const interval = setInterval(() => {
+              import('../mock/data').then(mod => {
+                setSpots(mod.getMockSpots());
+              });
+            }, 3000);
+            wsRef.current = { close: () => clearInterval(interval), readyState: WebSocket.OPEN };
+            return () => clearInterval(interval);
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
@@ -26,21 +41,15 @@ export default function LiveMonitor() {
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-
-                // Check if this is a notification message
                 if (data.type === 'notification' && data.data) {
-                    // Notification messages are handled by NotificationBell component
-                    // Just log here for debugging
-                    console.log('[LiveMonitor] Notification received (handled by NotificationBell):', data.data.notification_type);
+                    console.log('[LiveMonitor] Notification received:', data.data.notification_type);
                 } else {
-                    // Regular spot status update
                     setSpots(data);
                 }
             } catch (e) {
                 console.error('Failed to parse WebSocket message:', e);
             }
         };
-
 
         ws.onerror = (error) => {
             console.error('WebSocket error:', error);
@@ -54,16 +63,16 @@ export default function LiveMonitor() {
         };
 
         return () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
-            }
+            if (ws.readyState === WebSocket.OPEN) ws.close();
         };
     }, []);
 
     const spotNames = Object.keys(spots).sort();
     const occupied = spotNames.filter(name => spots[name]?.occupied).length;
     const free = spotNames.length - occupied;
-    const videoFeedUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/video_feed';
+    const videoFeedUrl = IS_MOCK
+        ? '/mock-feed.svg'
+        : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/video_feed';
 
     return (
         <div className="flex flex-col gap-4">

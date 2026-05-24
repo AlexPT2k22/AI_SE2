@@ -1,0 +1,28 @@
+frontend:
+  - frontend/**/*
+
+backend:
+  - main.py
+  - auth_*.py
+  - spot_classifier.py
+  - alpr.py
+  - supabaseStorage.py
+  - requirements.txt
+
+mobile:
+  - mobile/**/*
+
+esp32:
+  - esp32_firmware/**/*
+
+documentation:
+  - README.md
+  - ESP32_API_GUIDE.md
+  - tables.txt
+
+config:
+  - .github/**/*
+  - .env*
+  - .gitignore
+  - vercel.json
+  - vite.config.js

@@ -4,6 +4,8 @@ import { api } from '../api.js';
 import Card from '../components/common/Card';
 import StatsCard from '../components/common/StatsCard';
 
+const IS_MOCK = import.meta.env.VITE_MOCK === 'true';
+
 export default function Admin() {
     const [stats, setStats] = React.useState(null);
     const [notifications, setNotifications] = React.useState([]);
@@ -11,8 +13,18 @@ export default function Admin() {
     const [error, setError] = React.useState('');
     const wsRef = React.useRef(null);
 
+    React.useEffect(() => {
+        if (IS_MOCK) {
+          import('../mock/data').then(mod => {
+            setNotifications(mod.MOCK_NOTIFICATIONS);
+          });
+        }
+    }, []);
+
     // WebSocket para notificações em tempo real (só envia quando há nova violação)
     React.useEffect(() => {
+        if (IS_MOCK) return;
+
         const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
@@ -20,10 +32,9 @@ export default function Admin() {
         ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-                // Verificar se é uma notificação (tem type: "notification")
                 if (message.type === 'notification' && message.data?.notification_type === 'violation_alert') {
                     const newNotif = {
-                        id: `ws-${Date.now()}`, // ID temporário para WebSocket
+                        id: `ws-${Date.now()}`,
                         title: message.data.title,
                         body: message.data.body,
                         notification_type: message.data.notification_type,
@@ -33,7 +44,7 @@ export default function Admin() {
                     setNotifications(prev => [newNotif, ...prev]);
                 }
             } catch (e) {
-                // Ignorar mensagens que não são JSON (ex: estado de vagas)
+                // Ignorar
             }
         };
 
