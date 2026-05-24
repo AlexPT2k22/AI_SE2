@@ -215,16 +215,10 @@ graph TB
   <table>
     <tr>
       <td align="center"><strong>📊 Live Monitor</strong></td>
-      <td align="center"><strong>🏠 Home Dashboard</strong></td>
     </tr>
     <tr>
       <td>
         <img src="output_overlay-ezgif.com-optimize.gif" alt="Live Monitor" width="400"/>
-      </td>
-      <td>
-        <a href="https://tugapark.vercel.app">
-          <img src="Screenshot_1.png" alt="Home Dashboard" width="400"/>
-        </a>
       </td>
     </tr>
     <tr>
