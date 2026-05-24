@@ -1,14 +1,11 @@
 <div align="center">
-  <br/>
-  <img src="frontend/public/mock-feed.svg#gh-dark-mode-only" alt="TugaPark" width="600"/>
-  <br/>
   <h1>TugaPark — AI Smart Parking</h1>
   <p><strong>Intelligent Parking Management System</strong> powered by Computer Vision, IoT, and Machine Learning</p>
 
   <br/>
 
   <p>
-    <a href="https://tugapark.vercel.app" target="_blank">
+    <a href="[https://tugapark.vercel.app](https://ai-se-2.vercel.app/)" target="_blank">
       <img src="https://img.shields.io/badge/LIVE_DEMO-Vercel-000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo"/>
     </a>
     &nbsp;
